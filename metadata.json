@@ -1,0 +1,8 @@
+{
+  "name": "Remix AI Staff Roster Manager 24 September",
+  "description": "An intelligent duty scheduling application for 3-shift operations with AI-powered roster generation based on complex constraints.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
