@@ -11,9 +11,14 @@ import { StaffMember, RosterConfig, Assignment, ShiftType } from "../types";
 export const generateRoster = async (
   staff: StaffMember[],
   config: RosterConfig,
-  manualAssignments: Assignment[]
+  manualAssignments: Assignment[],
+  customApiKey?: string
 ): Promise<Assignment[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  const activeKey = customApiKey?.trim() || process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+  if (!activeKey) {
+    throw new Error("Missing Gemini API Key. Please provide a valid Gemini API key or use the Local System Generation option (no API key required).");
+  }
+  const ai = new GoogleGenAI({ apiKey: activeKey });
   
   const isHaStaff = (name: string, member?: StaffMember): boolean => {
     if (member?.isHa) return true;
@@ -125,7 +130,7 @@ export const generateRoster = async (
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           thinkingConfig: { thinkingBudget: 16384 },

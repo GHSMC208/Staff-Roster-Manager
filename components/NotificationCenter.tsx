@@ -52,7 +52,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'pending_action' | 'email_inbox' | 'all_requests'>('pending_action');
   const [responseNotes, setResponseNotes] = useState<Record<string, string>>({});
-  const [isOpen, setIsOpen] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
 
   // Filter notifications for current logged in user (by email or staff ID or WS role)
   const userEmail = (currentUser.email || (currentStaff?.email) || '').toLowerCase().trim();

@@ -21,7 +21,6 @@ import { ICONS, MONTHS, YEARS, THEME_SHIFT_STYLES } from './constants';
 import { Building2, Crown, Shield, ShieldCheck, UserCheck, Lock, LogOut, ArrowRightLeft, Sparkles, User, Filter, Stethoscope, Activity, Table2, PhoneCall, Database } from 'lucide-react';
 import StaffManager from './components/StaffManager';
 import RulesManager from './components/RulesManager';
-import ManualEntry from './components/ManualEntry';
 import Generator from './components/Generator';
 import CalendarView from './components/CalendarView';
 import OnCallPrintView from './components/OnCallPrintView';
@@ -223,7 +222,7 @@ const App: React.FC = () => {
       if (user.wardId && user.wardId !== 'ALL') {
         setActiveWardId(user.wardId);
       }
-      setActiveTab('Manual');
+      setActiveTab('Calendar');
     } else {
       // Regular staff user (SN / MSA)
       if (user.staffMemberId) {
@@ -1059,19 +1058,29 @@ const App: React.FC = () => {
             assignments={resolvedAssignments} 
           />
         );
+      case 'Calendar':
       case 'Manual':
         return (
-          <ManualEntry 
+          <CalendarView 
             staff={activeWardStaff} 
+            allStaff={visibleStaffForUser}
+            wards={visibleWardsForUser}
+            currentWardId={activeWardId}
+            onSelectWard={setActiveWardId}
             config={config} 
             assignments={resolvedAssignments} 
             onUpdateAssignment={updateAssignment}
             onUpdateBatch={updateAssignmentsBatch}
             onResetPreviousMonthLast5Days={handleResetPrevMonthLast5Days}
             onResetCurrentMonth={handleResetCurrentMonth}
-            onExport={handleExportAssignments}
-            onImport={handleImportAssignments}
+            onExportCSV={handleExportAssignments}
+            onImportCSV={handleImportAssignments}
+            onOpenAccessExport={() => setIsAccessExportOpen(true)}
             theme={theme}
+            onUpdateConfig={setConfig}
+            isTopAdmin={currentUser.role === 'admin' || currentUser.role === 'cns' || currentUser.nurseDesignation === 'CNS'}
+            currentUserRole={currentUser.role}
+            currentUser={currentUser}
           />
         );
       case 'Generate':
@@ -1084,25 +1093,6 @@ const App: React.FC = () => {
             onComplete={() => setActiveTab('Calendar')}
             onUpdateConfig={setConfig}
             currentUserRole={currentUser.role}
-          />
-        );
-      case 'Calendar':
-        return (
-          <CalendarView 
-            staff={activeWardStaff} 
-            allStaff={visibleStaffForUser}
-            wards={visibleWardsForUser}
-            currentWardId={activeWardId}
-            onSelectWard={setActiveWardId}
-            config={config} 
-            assignments={resolvedAssignments} 
-            onExportCSV={handleExportAssignments}
-            onOpenAccessExport={() => setIsAccessExportOpen(true)}
-            theme={theme}
-            onUpdateConfig={setConfig}
-            isTopAdmin={currentUser.role === 'admin' || currentUser.role === 'cns' || currentUser.nurseDesignation === 'CNS'}
-            currentUserRole={currentUser.role}
-            currentUser={currentUser}
           />
         );
       case 'OnCall':
@@ -1305,26 +1295,25 @@ const App: React.FC = () => {
           if (currentUser.role === 'admin' || currentUser.role === 'cns' || currentUser.role === 'dcns' || currentUser.nurseDesignation === 'CNS' || currentUser.nurseDesignation === 'DCNS' || currentUser.role === 'head_nurse' || currentUser.role === 'ward_supervisor' || currentUser.nurseDesignation === 'HN') {
             // Tier 1, 2, & 3: GCNS, DCNS / CNS, and Head Nurse (HN)
             visibleTabs = [
+              { id: 'Calendar', icon: <Table2 size={18} />, label: 'Roster Schedule' },
               { id: 'Wards', icon: <Building2 size={18} />, label: currentUser.role === 'admin' ? 'Hospital Governance' : currentUser.role === 'cns' || currentUser.role === 'dcns' || currentUser.nurseDesignation === 'CNS' || currentUser.nurseDesignation === 'DCNS' ? 'Division Governance' : 'Ward Governance' },
-              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' },
-              { id: 'Calendar', icon: <Table2 size={18} />, label: 'Table Grid & On-Call' }
+              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' }
             ];
           } else if (currentUser.role === 'nurse_supervisor' || currentUser.nurseDesignation === 'NS') {
             // Tier 4: Nurse Supervisor (NS) / Supervisor (WS) - Clinical Roster Suite
             visibleTabs = [
-              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' },
-              { id: 'Staff', icon: <ICONS.Users size={18} />, label: 'Staff' },
-              { id: 'Rules', icon: <ICONS.Settings size={18} />, label: 'Rules' },
-              { id: 'Manual', icon: <ICONS.Edit size={18} />, label: 'Manual' },
-              { id: 'Generate', icon: <ICONS.Sparkles size={18} />, label: 'Generate' },
-              { id: 'Calendar', icon: <ICONS.CalendarIcon size={18} />, label: 'Calendar' }
+              { id: 'Calendar', icon: <Table2 size={18} />, label: 'Roster Schedule' },
+              { id: 'Generate', icon: <Sparkles size={18} />, label: 'AI Generator' },
+              { id: 'Staff', icon: <ICONS.Users size={18} />, label: 'Staff Directory' },
+              { id: 'Rules', icon: <ICONS.Settings size={18} />, label: 'Shift Rules' },
+              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' }
             ];
           } else {
             // Tier 5: Staff Nurse (SN) / Medical Service Aid (MSA)
             visibleTabs = [
               { id: 'StaffPortal', icon: <UserCheck size={18} />, label: 'My Duty Card & Swaps' },
-              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' },
-              { id: 'Calendar', icon: <Table2 size={18} />, label: 'Table Grid' }
+              { id: 'Calendar', icon: <Table2 size={18} />, label: 'Ward Duty Roster' },
+              { id: 'Hierarchy', icon: <Sparkles size={18} />, label: 'Hierarchy Tree' }
             ];
           }
 
