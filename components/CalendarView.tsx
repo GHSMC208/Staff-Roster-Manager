@@ -4,7 +4,6 @@ import { ICONS, MONTHS } from '../constants';
 import { 
   Table2, 
   PhoneCall, 
-  Database, 
   Edit3, 
   Eye, 
   RotateCcw, 
@@ -15,10 +14,10 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   X, 
-  Calendar as CalendarIcon,
-  Layers,
-  ChevronDown,
-  SlidersHorizontal
+  Calendar as CalendarIcon, 
+  Layers, 
+  ChevronDown, 
+  SlidersHorizontal 
 } from 'lucide-react';
 import ShiftGrid from './ShiftGrid';
 import StaffCardsView from './StaffCardsView';
@@ -40,7 +39,6 @@ interface Props {
   onResetCurrentMonth?: () => void;
   onExportCSV?: () => void;
   onImportCSV?: (csv: string) => void;
-  onOpenAccessExport?: () => void;
   theme?: ThemeType;
   onUpdateConfig?: (config: RosterConfig) => void;
   isTopAdmin?: boolean;
@@ -62,7 +60,6 @@ const CalendarView: React.FC<Props> = ({
   onResetCurrentMonth,
   onExportCSV, 
   onImportCSV,
-  onOpenAccessExport,
   theme = 'Professional',
   onUpdateConfig,
   isTopAdmin = false,
@@ -415,17 +412,7 @@ const CalendarView: React.FC<Props> = ({
               </button>
             )}
 
-            {/* MS Access Exporter */}
-            {onOpenAccessExport && (
-              <button 
-                onClick={onOpenAccessExport}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl transition font-bold text-xs shadow-2xs cursor-pointer active:scale-95"
-                title="Export entire system to Microsoft Access (.accdb) database"
-              >
-                <Database size={14} />
-                <span>MS Access (.accdb)</span>
-              </button>
-            )}
+
 
             {/* Print / PDF */}
             <button 
