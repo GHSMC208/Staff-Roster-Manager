@@ -18,7 +18,7 @@ import {
   WardTransferRequest
 } from './types';
 import { ICONS, MONTHS, YEARS, THEME_SHIFT_STYLES } from './constants';
-import { Building2, Crown, Shield, ShieldCheck, UserCheck, Lock, LogOut, ArrowRightLeft, Sparkles, User, Filter, Stethoscope, Activity, Table2, PhoneCall } from 'lucide-react';
+import { Building2, Crown, Shield, ShieldCheck, UserCheck, Lock, LogOut, ArrowRightLeft, Sparkles, User, Filter, Stethoscope, Activity, Table2, PhoneCall, KeyRound } from 'lucide-react';
 import StaffManager from './components/StaffManager';
 import RulesManager from './components/RulesManager';
 import Generator from './components/Generator';
@@ -29,6 +29,7 @@ import { WardAdminManager } from './components/WardAdminManager';
 import { HierarchyChart } from './components/HierarchyChart';
 import { LoginModal } from './components/LoginModal';
 import { LoginPage } from './components/LoginPage';
+import { PasswordAuthModal } from './components/PasswordAuthModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { 
   createExchangeRequestHelper, 
@@ -116,6 +117,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeType>('Professional');
   const [loggedInStaffId, setLoggedInStaffId] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
 
   // Duty Exchange & Notification State
   const [exchangeRequests, setExchangeRequests] = useState<DutyExchangeRequest[]>([]);
@@ -1241,7 +1243,15 @@ const App: React.FC = () => {
 
           <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 hidden sm:block" />
 
-
+          {/* Change Password Button */}
+          <button
+            onClick={() => setIsChangePasswordOpen(true)}
+            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-black transition flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider cursor-pointer"
+            title="Change password via OTP"
+          >
+            <KeyRound size={14} />
+            Password
+          </button>
 
           {/* Log Out Button */}
           <button
@@ -1422,7 +1432,26 @@ const App: React.FC = () => {
         currentUser={currentUser}
       />
 
-
+      {/* Change Password Modal for logged-in user */}
+      {currentUser && (
+        <PasswordAuthModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+          targetUser={{
+            id: currentUser.id,
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role,
+            nurseDesignation: currentUser.nurseDesignation,
+            jobTitle: currentUser.jobTitle,
+            photoUrl: currentUser.photoUrl,
+            wardName: currentWard?.name,
+            staffMemberId: currentUser.staffMemberId,
+            userAccount: currentUser
+          }}
+          onSuccessLogin={() => setIsChangePasswordOpen(false)}
+        />
+      )}
     </div>
   );
 };

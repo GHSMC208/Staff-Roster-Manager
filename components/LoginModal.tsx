@@ -17,6 +17,7 @@ import {
   Activity,
   Search
 } from 'lucide-react';
+import { PasswordAuthModal, PendingAuthUser } from './PasswordAuthModal';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -46,8 +47,56 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'admin' | 'cns' | 'head_nurse' | 'nurse_supervisor' | 'staff'>('all');
   const [modalSearch, setModalSearch] = useState('');
+  const [pendingAuthUser, setPendingAuthUser] = useState<PendingAuthUser | null>(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleQuickEmailLogin = (email: string) => {
+    setErrorMsg(null);
+    const clean = email.trim().toLowerCase();
+    const matchedUser = users.find(u => u.email.trim().toLowerCase() === clean);
+    if (matchedUser) {
+      const ward = wards.find(w => w.id === matchedUser.wardId);
+      setPendingAuthUser({
+        id: matchedUser.id,
+        name: matchedUser.name,
+        email: matchedUser.email,
+        role: matchedUser.role,
+        nurseDesignation: matchedUser.nurseDesignation,
+        jobTitle: matchedUser.jobTitle,
+        photoUrl: matchedUser.photoUrl,
+        wardName: ward?.name,
+        staffMemberId: matchedUser.staffMemberId,
+        userAccount: matchedUser
+      });
+      setIsPasswordModalOpen(true);
+      return;
+    }
+
+    const matchedStaff = staff.find(s => 
+      (s.email && s.email.trim().toLowerCase() === clean) ||
+      s.id.toLowerCase() === clean
+    );
+    if (matchedStaff) {
+      const ward = wards.find(w => w.id === matchedStaff.wardId);
+      setPendingAuthUser({
+        id: matchedStaff.id,
+        name: matchedStaff.name,
+        email: matchedStaff.email || `${matchedStaff.id.toLowerCase()}@hospital.org`,
+        role: 'staff',
+        nurseDesignation: matchedStaff.isHa ? 'MSA' : 'SN',
+        jobTitle: matchedStaff.jobTitle || (matchedStaff.isHa ? 'Medical Service Aid' : 'Staff Nurse'),
+        wardName: ward?.name,
+        staffMemberId: matchedStaff.id,
+        staffMember: matchedStaff
+      });
+      setIsPasswordModalOpen(true);
+      return;
+    }
+
+    setErrorMsg(`No registered hospital account found for "${email}". Please select from the list below.`);
+  };
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,57 +108,44 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    // 1. First check if email matches a system UserAccount
-    const matchedUser = users.find(u => 
-      u.email.trim().toLowerCase() === clean || 
-      (u.staffMemberId && u.staffMemberId.toLowerCase() === clean)
-    );
-    if (matchedUser) {
-      onLoginUser(matchedUser);
-      setInputEmail('');
-      setInputPasscode('');
-      onClose();
-      return;
-    }
+    handleQuickEmailLogin(clean);
+  };
 
-    // 2. Otherwise check staff list by email
-    const success = onLoginStaffByEmail(clean);
-    if (success) {
-      setInputEmail('');
-      setInputPasscode('');
+  const handleSuccessAuthLogin = (authUser: PendingAuthUser) => {
+    setIsPasswordModalOpen(false);
+    if (authUser.userAccount) {
+      onLoginUser(authUser.userAccount);
       onClose();
-      return;
-    }
-
-    // 3. Check staff list by ID
-    if (onLoginStaffById) {
-      const idSuccess = onLoginStaffById(clean);
-      if (idSuccess) {
-        setInputEmail('');
-        setInputPasscode('');
+    } else if (authUser.staffMember) {
+      if (authUser.staffMember.email) {
+        const success = onLoginStaffByEmail(authUser.staffMember.email);
+        if (success) {
+          onClose();
+          return;
+        }
+      }
+      if (onLoginStaffById) {
+        onLoginStaffById(authUser.staffMember.id);
+      }
+      onClose();
+    } else {
+      const clean = authUser.email.trim().toLowerCase();
+      const u = users.find(acc => acc.email.toLowerCase() === clean);
+      if (u) {
+        onLoginUser(u);
         onClose();
         return;
       }
-    }
-
-    setErrorMsg(`No registered hospital account found for "${clean}". Please select your registered hospital email from the official roster below.`);
-  };
-
-  const handleQuickEmailLogin = (email: string) => {
-    setErrorMsg(null);
-    const clean = email.trim().toLowerCase();
-    const matchedUser = users.find(u => u.email.trim().toLowerCase() === clean);
-    if (matchedUser) {
-      onLoginUser(matchedUser);
-      onClose();
-      return;
-    }
-
-    const success = onLoginStaffByEmail(clean);
-    if (success) {
-      onClose();
-    } else {
-      setErrorMsg(`Could not log in with ${email}.`);
+      const s = staff.find(st => st.email?.toLowerCase() === clean || st.id.toLowerCase() === authUser.id?.toLowerCase());
+      if (s) {
+        if (s.email && onLoginStaffByEmail(s.email)) {
+          onClose();
+          return;
+        }
+        if (onLoginStaffById) onLoginStaffById(s.id);
+        onClose();
+        return;
+      }
     }
   };
 
@@ -393,6 +429,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Password Authentication & OTP Reset Popup Modal */}
+      <PasswordAuthModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        targetUser={pendingAuthUser}
+        onSuccessLogin={handleSuccessAuthLogin}
+      />
     </div>
   );
 };

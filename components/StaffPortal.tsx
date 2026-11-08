@@ -30,6 +30,7 @@ import { StaffMember, RosterConfig, Assignment, ShiftType, ThemeType, UserAccoun
 import { MONTHS, THEME_SHIFT_STYLES } from '../constants';
 import { CardLayout } from './StaffCardsView';
 import { StaffLicenseCardModal } from './StaffLicenseCardModal';
+import { PasswordAuthModal, PendingAuthUser } from './PasswordAuthModal';
 
 interface StaffPortalProps {
   staff: StaffMember[];
@@ -221,11 +222,29 @@ export const StaffPortal: React.FC<StaffPortalProps> = ({
 
   // Day expansion state for "Who's working with me"
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [pendingAuthUser, setPendingAuthUser] = useState<PendingAuthUser | null>(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Selected staff object if logged in
   const currentStaff = useMemo(() => {
     return staff.find(s => s.id === loggedInStaffId) || null;
   }, [staff, loggedInStaffId]);
+
+  // Quick sign in helper for demo testing
+  const handleQuickSignIn = (member: StaffMember) => {
+    setAuthError(null);
+    setPendingAuthUser({
+      id: member.id,
+      name: member.name,
+      email: member.email || `${member.id.toLowerCase()}@hospital.org`,
+      role: 'staff',
+      nurseDesignation: member.isHa ? 'MSA' : 'SN',
+      jobTitle: member.jobTitle || (member.isHa ? 'Medical Service Aid' : 'Staff Nurse'),
+      staffMemberId: member.id,
+      staffMember: member
+    });
+    setIsPasswordModalOpen(true);
+  };
 
   // Handle email sign in submission
   const handleSignIn = (e: React.FormEvent) => {
@@ -238,26 +257,25 @@ export const StaffPortal: React.FC<StaffPortalProps> = ({
       return;
     }
 
-    const matchedStaff = staff.find(s => s.email && s.email.trim().toLowerCase() === cleanEmail);
+    const matchedStaff = staff.find(s => 
+      (s.email && s.email.trim().toLowerCase() === cleanEmail) ||
+      s.id.toLowerCase() === cleanEmail
+    );
 
     if (matchedStaff) {
-      if (onLogin) {
-        onLogin(matchedStaff.id);
-      }
+      handleQuickSignIn(matchedStaff);
       setInputEmail('');
       setInputPin('');
-      setAuthError(null);
     } else {
       setAuthError(`No staff member found with email "${cleanEmail}". Please check your email or select a demo staff member below.`);
     }
   };
 
-  // Quick sign in helper for demo testing
-  const handleQuickSignIn = (member: StaffMember) => {
-    if (onLogin) {
-      onLogin(member.id);
+  const handleSuccessStaffLogin = (authUser: PendingAuthUser) => {
+    setIsPasswordModalOpen(false);
+    if (onLogin && authUser.staffMemberId) {
+      onLogin(authUser.staffMemberId);
     }
-    setAuthError(null);
   };
 
   // Calendar grid template structure for CardLayout
@@ -1796,6 +1814,13 @@ export const StaffPortal: React.FC<StaffPortalProps> = ({
         />
       )}
 
+      {/* Password Authentication & OTP Reset Popup Modal */}
+      <PasswordAuthModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        targetUser={pendingAuthUser}
+        onSuccessLogin={handleSuccessStaffLogin}
+      />
     </div>
   );
 };

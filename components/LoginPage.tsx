@@ -25,6 +25,7 @@ import {
   FolderTree,
   Filter
 } from 'lucide-react';
+import { PasswordAuthModal, PendingAuthUser } from './PasswordAuthModal';
 
 interface LoginPageProps {
   users: UserAccount[];
@@ -51,6 +52,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWardFilter, setSelectedWardFilter] = useState<string>('all');
   const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'sn' | 'ha'>('all');
+  const [pendingAuthUser, setPendingAuthUser] = useState<PendingAuthUser | null>(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Directorate CNS & DCNS view controls
   const [cnsSubRoleFilter, setCnsSubRoleFilter] = useState<'all' | 'cns' | 'dcns'>('all');
@@ -173,38 +176,89 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     );
 
     if (matchedUser) {
-      onLoginUser(matchedUser);
+      handleQuickAccountLogin(matchedUser);
       return;
     }
 
-    // 2. Check if it's a staff email
-    const staffLoginSuccess = onLoginStaffByEmail(cleanEmail);
-    if (staffLoginSuccess) {
-      return;
-    }
+    // 2. Check staff list by email or staff ID
+    const matchedStaff = staff.find(s => 
+      (s.email && s.email.trim().toLowerCase() === cleanEmail) ||
+      s.id.toLowerCase() === cleanEmail
+    );
 
-    // 3. Check if it's a staff ID
-    const matchedStaff = staff.find(s => s.id.toLowerCase() === cleanEmail);
     if (matchedStaff) {
-      onLoginStaffById(matchedStaff.id);
+      handleQuickStaffLogin(matchedStaff);
       return;
     }
 
-    setErrorMessage(`No account found for "${emailInput}". Please select one of the 4 account types below or choose from the demo directory.`);
+    setErrorMessage(`No account found for "${emailInput}". Please select one of the accounts below or choose from the demo directory.`);
   };
 
   const handleQuickAccountLogin = (accountUser: UserAccount) => {
     setErrorMessage(null);
-    onLoginUser(accountUser);
+    const ward = wards.find(w => w.id === accountUser.wardId);
+    setPendingAuthUser({
+      id: accountUser.id,
+      name: accountUser.name,
+      email: accountUser.email,
+      role: accountUser.role,
+      nurseDesignation: accountUser.nurseDesignation,
+      jobTitle: accountUser.jobTitle,
+      photoUrl: accountUser.photoUrl,
+      wardName: ward?.name || (accountUser.wardId === 'ALL' ? 'All Clinical Divisions' : undefined),
+      staffMemberId: accountUser.staffMemberId,
+      userAccount: accountUser
+    });
+    setIsPasswordModalOpen(true);
   };
 
   const handleQuickStaffLogin = (staffMember: StaffMember) => {
     setErrorMessage(null);
-    if (staffMember.email) {
-      const success = onLoginStaffByEmail(staffMember.email);
-      if (success) return;
+    const ward = wards.find(w => w.id === staffMember.wardId);
+    const matchedUser = users.find(u => 
+      (staffMember.email && u.email.trim().toLowerCase() === staffMember.email.trim().toLowerCase()) ||
+      (u.staffMemberId && u.staffMemberId.toLowerCase() === staffMember.id.toLowerCase())
+    );
+    const cleanEmail = staffMember.email || (matchedUser ? matchedUser.email : `${staffMember.id.toLowerCase()}@hospital.org`);
+    setPendingAuthUser({
+      id: matchedUser ? matchedUser.id : staffMember.id,
+      name: staffMember.name,
+      email: cleanEmail,
+      role: matchedUser ? matchedUser.role : 'staff',
+      nurseDesignation: matchedUser?.nurseDesignation || (staffMember.isHa ? 'MSA' : 'SN'),
+      jobTitle: staffMember.jobTitle || (staffMember.isHa ? 'Medical Service Aid (MSA)' : 'Staff Nurse (SN)'),
+      wardName: ward?.name,
+      staffMemberId: staffMember.id,
+      userAccount: matchedUser,
+      staffMember: staffMember
+    });
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleSuccessAuthLogin = (authUser: PendingAuthUser) => {
+    setIsPasswordModalOpen(false);
+    if (authUser.userAccount) {
+      onLoginUser(authUser.userAccount);
+    } else if (authUser.staffMember) {
+      if (authUser.staffMember.email) {
+        const success = onLoginStaffByEmail(authUser.staffMember.email);
+        if (success) return;
+      }
+      onLoginStaffById(authUser.staffMember.id);
+    } else {
+      const clean = authUser.email.trim().toLowerCase();
+      const u = users.find(acc => acc.email.toLowerCase() === clean);
+      if (u) {
+        onLoginUser(u);
+        return;
+      }
+      const s = staff.find(st => st.email?.toLowerCase() === clean || st.id.toLowerCase() === authUser.id?.toLowerCase());
+      if (s) {
+        if (s.email && onLoginStaffByEmail(s.email)) return;
+        onLoginStaffById(s.id);
+        return;
+      }
     }
-    onLoginStaffById(staffMember.id);
   };
 
   return (
@@ -1505,6 +1559,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       <footer className="max-w-6xl w-full mx-auto py-4 text-center text-xs text-slate-500 border-t border-slate-800/80">
         <p>Hospital Clinical Duty & Roster Management System • 4-Tier Command Structure • Bahrain Medical Services</p>
       </footer>
+
+      {/* Password Authentication & OTP Reset Popup Modal */}
+      <PasswordAuthModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        targetUser={pendingAuthUser}
+        onSuccessLogin={handleSuccessAuthLogin}
+      />
     </div>
   );
 };
