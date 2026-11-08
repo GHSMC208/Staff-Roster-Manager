@@ -947,7 +947,7 @@ const ShiftGrid: React.FC<Props> = ({
       )}
 
       <div className={`overflow-x-auto border w-full transition-all duration-700 ${tableClasses[theme]}`}>
-        <table className="w-full text-[9px] border-collapse table-fixed select-none print:text-[7px]">
+        <table className="shift-grid-table w-full text-[9px] border-collapse table-fixed select-none print:text-[7px]">
           <thead>
             <tr className={`${headerBg[theme]} border-b border-gray-200/20 print:bg-slate-100`}>
               <th className={`sticky left-0 ${headerBg[theme]} z-30 p-2 border-r border-gray-200/20 w-36 sm:w-44 font-black text-slate-500 uppercase tracking-tighter text-left print:static print:w-24 print-header-personnel`}>

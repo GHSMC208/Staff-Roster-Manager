@@ -119,7 +119,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-indigo-100 shadow-xl overflow-hidden mb-8 transition-all">
+    <div className="bg-white rounded-3xl border border-indigo-100 shadow-xl overflow-hidden mb-8 transition-all no-print">
       {/* Top Banner Header */}
       <div 
         onClick={() => setIsOpen(!isOpen)}

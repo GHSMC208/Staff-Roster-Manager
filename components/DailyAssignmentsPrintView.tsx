@@ -276,7 +276,7 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
     let isDense = false;
 
     if (is2Up) {
-      // 2 Days per landscape page: Target height per day card in print is approx 88-89mm
+      // 2 Days per landscape page: Target height per day card in print is strictly 94mm
       if (numRows <= 5) {
         rowMinHeightScreen = '32px';
         rowMinHeightPrint = '23px';
@@ -310,7 +310,7 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
         rowMinHeightPrint = '17px';
         rowPaddingY = 'py-0.5';
         nameFontSizeScreen = '11.5px';
-        nameFontSizePrint = '9.2px';
+        nameFontSizePrint = '9.5px';
         headerFontSize = '10px';
         badgeFontSize = '7px';
         counterpartFontSize = '7px';
@@ -318,13 +318,13 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
         notesFontSize = '8.5px';
         onCallFontSize = '7.5px';
         dateNumberSize = 'text-2xl';
-        isDense = true;
+        isDense = false;
       } else if (numRows <= 12) {
         rowMinHeightScreen = '22px';
-        rowMinHeightPrint = '14.5px';
+        rowMinHeightPrint = '14px';
         rowPaddingY = 'py-0.5';
         nameFontSizeScreen = '10.5px';
-        nameFontSizePrint = '8.2px';
+        nameFontSizePrint = '8.5px';
         headerFontSize = '9.5px';
         badgeFontSize = '6.5px';
         counterpartFontSize = '6.5px';
@@ -333,13 +333,12 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
         onCallFontSize = '7px';
         dateNumberSize = 'text-xl';
         isDense = true;
-      } else {
-        // 13+ rows (high density)
-        rowMinHeightScreen = '19px';
+      } else if (numRows <= 15) {
+        rowMinHeightScreen = '20px';
         rowMinHeightPrint = '12px';
         rowPaddingY = 'py-0';
         nameFontSizeScreen = '9.5px';
-        nameFontSizePrint = '7.2px';
+        nameFontSizePrint = '7.5px';
         headerFontSize = '8.5px';
         badgeFontSize = '6px';
         counterpartFontSize = '6px';
@@ -348,9 +347,24 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
         onCallFontSize = '6.5px';
         dateNumberSize = 'text-lg';
         isDense = true;
+      } else {
+        // 16+ rows (ultra-dense)
+        rowMinHeightScreen = '18px';
+        rowMinHeightPrint = '10.5px';
+        rowPaddingY = 'py-0';
+        nameFontSizeScreen = '8.5px';
+        nameFontSizePrint = '6.8px';
+        headerFontSize = '8px';
+        badgeFontSize = '5.5px';
+        counterpartFontSize = '5.5px';
+        workshopRowHeight = '13px';
+        notesFontSize = '7px';
+        onCallFontSize = '6px';
+        dateNumberSize = 'text-base';
+        isDense = true;
       }
     } else if (is1Up) {
-      // 1 Day per landscape page: Full vertical height (~180mm available)
+      // 1 Day per landscape page: Full vertical height (~194mm available)
       if (numRows <= 7) {
         rowMinHeightScreen = '38px';
         rowMinHeightPrint = '34px';
@@ -490,9 +504,11 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
           break-after: page !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
+          margin-top: 0 !important;
           margin-bottom: 0 !important;
-          height: calc(100vh - 12mm) !important;
-          max-height: 184mm !important;
+          height: 194mm !important;
+          max-height: 194mm !important;
+          min-height: 194mm !important;
           display: flex !important;
           flex-direction: column !important;
           justify-content: stretch !important;
@@ -505,9 +521,11 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
           box-sizing: border-box !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
+          margin-top: 0 !important;
           margin-bottom: 3.5mm !important;
-          height: calc(50vh - 6mm) !important;
-          max-height: 89.5mm !important;
+          height: 94mm !important;
+          max-height: 94mm !important;
+          min-height: 94mm !important;
           display: flex !important;
           flex-direction: column !important;
           justify-content: stretch !important;
@@ -518,13 +536,19 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
           break-after: page !important;
           margin-bottom: 0 !important;
         }
+        .print-day-block:nth-child(2n-1) {
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+        }
       `;
     } else {
       pagingRule = `
         .print-day-block {
+          box-sizing: border-box !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          margin-bottom: 8mm !important;
+          margin-bottom: 6mm !important;
+          height: auto !important;
         }
       `;
     }
@@ -532,8 +556,8 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
     return `
       @media print {
         @page {
-          size: landscape !important;
-          margin: 6mm 8mm 6mm 8mm !important;
+          size: A4 landscape !important;
+          margin: 5mm 6mm !important;
         }
         html, body {
           background: white !important;
@@ -997,7 +1021,7 @@ const DailyAssignmentsPrintView: React.FC<Props> = ({
               {selectedDays.map(dayNum => (
                 <div
                   key={dayNum}
-                  className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-200 shadow-sm relative print-day-block overflow-hidden"
+                  className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden"
                 >
                   <div className="absolute top-2 right-2 no-print z-10">
                     <button
@@ -1277,41 +1301,46 @@ const DayAssignmentCard: React.FC<CardProps> = ({
       </div>
 
       {/* 2. Roster Columns: Morning, Evening, Night */}
-      <div className={`w-full md:w-[67%] print:w-[67%] grid grid-cols-[1.7fr_0.8fr_1.7fr_0.8fr_1.7fr_0.8fr] border-b md:border-b-0 md:border-r ${themeStyles.borderColor} flex-grow`}>
+      <div 
+        style={{
+          gridTemplateRows: `auto repeat(${maxLen}, 1fr)`
+        }}
+        className={`w-full md:w-[67%] print:w-[67%] grid grid-cols-[1.7fr_0.8fr_1.7fr_0.8fr_1.7fr_0.8fr] border-b md:border-b-0 md:border-r ${themeStyles.borderColor} flex-grow h-full`}
+      >
         {/* Table Headers */}
         <div 
           style={{ fontSize: isPrint ? metrics.nameFontSizePrint : metrics.headerFontSize }}
-          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight print-color-morning flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight print-color-morning flex items-center justify-center`}
         >
           Morning
         </div>
         <div 
           style={{ fontSize: isPrint ? metrics.badgeFontSize : '8px' }}
-          className={`${themeStyles.headerBg} font-semibold border-b border-r ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight text-gray-500/90 print-color-morning flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-semibold border-b border-r ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight text-gray-500/90 print-color-morning flex items-center justify-center`}
         >
           (Assignment)
         </div>
         <div 
           style={{ fontSize: isPrint ? metrics.nameFontSizePrint : metrics.headerFontSize }}
-          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight print-color-evening flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight print-color-evening flex items-center justify-center`}
         >
           Evening
         </div>
         <div 
           style={{ fontSize: isPrint ? metrics.badgeFontSize : '8px' }}
-          className={`${themeStyles.headerBg} font-semibold border-b border-r ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight text-gray-500/90 print-color-evening flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-semibold border-b border-r ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight text-gray-500/90 print-color-evening flex items-center justify-center`}
         >
           (Assignment)
         </div>
         <div 
           style={{ fontSize: isPrint ? metrics.nameFontSizePrint : metrics.headerFontSize }}
-          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight print-color-night flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-black border-b border-r ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight print-color-night flex items-center justify-center`}
         >
           Night
         </div>
         <div 
           style={{ fontSize: isPrint ? metrics.badgeFontSize : '8px' }}
-          className={`${themeStyles.headerBg} font-semibold border-b ${themeStyles.borderColor} text-center py-1 uppercase tracking-tight text-gray-500/90 print-color-night flex items-center justify-center`}
+          className={`${themeStyles.headerBg} font-semibold border-b ${themeStyles.borderColor} text-center py-0.5 uppercase tracking-tight text-gray-500/90 print-color-night flex items-center justify-center`}
         >
           (Assignment)
         </div>
@@ -1334,7 +1363,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Morning Personnel */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden print-color-morning ${
+                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden min-h-0 print-color-morning ${
                   mIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`}
               >
@@ -1343,7 +1372,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Morning Assignment */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`p-0.5 border-r ${themeStyles.borderColor} ${borderClass} bg-transparent print-color-morning ${
+                className={`p-0.5 border-r ${themeStyles.borderColor} ${borderClass} bg-transparent min-h-0 print-color-morning ${
                   mIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`} 
               />
@@ -1351,7 +1380,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Evening Personnel */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden print-color-evening ${
+                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden min-h-0 print-color-evening ${
                   eIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`}
               >
@@ -1360,7 +1389,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Evening Assignment */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`p-0.5 border-r ${themeStyles.borderColor} ${borderClass} bg-transparent print-color-evening ${
+                className={`p-0.5 border-r ${themeStyles.borderColor} ${borderClass} bg-transparent min-h-0 print-color-evening ${
                   eIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`} 
               />
@@ -1368,7 +1397,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Night Personnel */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden print-color-night ${
+                className={`px-1 sm:px-1.5 ${metrics.rowPaddingY} font-bold border-r ${themeStyles.borderColor} ${borderClass} flex items-center justify-start overflow-hidden min-h-0 print-color-night ${
                   nIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`}
               >
@@ -1377,7 +1406,7 @@ const DayAssignmentCard: React.FC<CardProps> = ({
               {/* Night Assignment */}
               <div 
                 style={{ minHeight: effectiveRowHeight }}
-                className={`p-0.5 ${borderClass} bg-transparent print-color-night ${
+                className={`p-0.5 ${borderClass} bg-transparent min-h-0 print-color-night ${
                   nIsFirstHa ? 'border-t-2 border-t-emerald-600 bg-emerald-50/5' : ''
                 }`} 
               />

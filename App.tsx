@@ -1396,7 +1396,9 @@ const App: React.FC = () => {
 
         return (
           <>
-            {renderNotifs()}
+            <div className="no-print">
+              {renderNotifs()}
+            </div>
             {renderNav()}
           </>
         );
