@@ -47,7 +47,6 @@ import {
   Printer,
   FolderPlus
 } from 'lucide-react';
-import { HierarchyChart } from './HierarchyChart';
 import { StaffLicenseCardModal } from './StaffLicenseCardModal';
 import { ManpowerSummaryPrintModal } from './ManpowerSummaryPrintModal';
 
@@ -71,6 +70,7 @@ interface WardAdminManagerProps {
   currentUserRole: UserRole;
   currentUser?: UserAccount;
   onNavigateToCalendar?: () => void;
+  onNavigateToHierarchy?: () => void;
 }
 
 export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
@@ -92,7 +92,8 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   onAssignHeadNurseToSupervisors,
   currentUserRole,
   currentUser,
-  onNavigateToCalendar
+  onNavigateToCalendar,
+  onNavigateToHierarchy
 }) => {
   // Determine if logged-in user is a GCNS, DCNS, CNS, or Head Nurse account
   const isDcnsLoggedIn = currentUserRole === 'dcns' || currentUser?.role === 'dcns' || currentUser?.nurseDesignation === 'DCNS';
@@ -226,7 +227,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'wards' | 'supervisors' | 'ns_assignment' | 'manpower' | 'hierarchy'>(() => isHnLoggedIn ? 'wards' : 'supervisors');
+  const [activeTab, setActiveTab] = useState<'wards' | 'supervisors' | 'ns_assignment' | 'manpower'>(() => isHnLoggedIn ? 'wards' : 'supervisors');
   
   // New Ward Form State
   const [showNewWardModal, setShowNewWardModal] = useState(false);
@@ -454,26 +455,6 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Filter Chief Nursing Services (CNS) - Hidden in HN account; If logged in as CNS, hide other CNS info and strictly show own profile
-  const cnsUsers = useMemo(() => {
-    if (isHnLoggedIn) return [];
-    const all = users.filter(u => u.role === 'cns' || u.nurseDesignation === 'CNS');
-    if (isCnsLoggedIn && currentUser) {
-      return all.filter(cns => cns.id === currentUser.id || cns.email === currentUser.email || (currentUser.category && cns.category === currentUser.category));
-    }
-    return all;
-  }, [users, isCnsLoggedIn, isHnLoggedIn, currentUser]);
-
-  // Filter Head Nurses (HN)
-  const headNurseUsers = useMemo(() => {
-    return users.filter(u => u.role === 'head_nurse' || u.role === 'ward_supervisor' || u.nurseDesignation === 'HN');
-  }, [users]);
-
-  // Filter Nurse Supervisors (NS)
-  const nurseSupervisorUsers = useMemo(() => {
-    return users.filter(u => u.role === 'nurse_supervisor' || u.nurseDesignation === 'NS');
-  }, [users]);
-
   // User's Effective Division Category
   const userDivisionCategory: WardCategory = useMemo(() => {
     if (currentUser?.category) return currentUser.category;
@@ -483,6 +464,35 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     }
     return 'Medical';
   }, [currentUser, wards]);
+
+  // Filter Chief Nursing Services (CNS) - Hidden in HN account; If logged in as CNS/DCNS, hide other CNS info and strictly show own profile/division
+  const cnsUsers = useMemo(() => {
+    if (isHnLoggedIn) return [];
+    const all = users.filter(u => u.role === 'cns' || u.nurseDesignation === 'CNS');
+    if (isCnsLoggedIn && currentUser) {
+      const userCat = (currentUser.category || userDivisionCategory).toLowerCase();
+      return all.filter(cns => cns.id === currentUser.id || cns.email === currentUser.email || ((cns.category || 'Medical').toLowerCase() === userCat));
+    }
+    return all;
+  }, [users, isCnsLoggedIn, isHnLoggedIn, currentUser, userDivisionCategory]);
+
+  // Filter Head Nurses (HN) - If logged in as CNS/DCNS, only show Head Nurses in their same division
+  const headNurseUsers = useMemo(() => {
+    const all = users.filter(u => u.role === 'head_nurse' || u.role === 'ward_supervisor' || u.nurseDesignation === 'HN');
+    if (isCnsLoggedIn && currentUser) {
+      const userCat = (currentUser.category || userDivisionCategory).toLowerCase();
+      return all.filter(h => {
+        const hCat = (h.category || (h.wardId ? wards.find(w => w.id === h.wardId)?.category : undefined) || 'Medical').toLowerCase();
+        return hCat === userCat;
+      });
+    }
+    return all;
+  }, [users, isCnsLoggedIn, currentUser, userDivisionCategory, wards]);
+
+  // Filter Nurse Supervisors (NS)
+  const nurseSupervisorUsers = useMemo(() => {
+    return users.filter(u => u.role === 'nurse_supervisor' || u.nurseDesignation === 'NS');
+  }, [users]);
 
   // Wards / Units that the logged-in user is authorized to assign NS to:
   // GCNS: Hospital-wide (all wards across all divisions)
@@ -578,6 +588,13 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   // Assign Ward directly to single Nurse Supervisor
   const handleAssignWardToSingleNs = (nsId: string, wardId: string) => {
     const targetWard = wards.find(w => w.id === wardId);
+    if (isCnsLoggedIn && targetWard) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      if ((targetWard.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to assign supervisors to other divisions.');
+        return;
+      }
+    }
     let matchingHn = headNurseUsers.find(h => h.wardId === wardId);
 
     // If HN is assigning to their ward or themselves, link to this HN
@@ -610,6 +627,14 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   // Assign HN to single Nurse Supervisor
   const handleAssignHnToSingleNs = (nsId: string, headNurseId: string) => {
     const targetHn = headNurseUsers.find(h => h.id === headNurseId);
+    if (isCnsLoggedIn && targetHn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      const hnCat = (targetHn.category || (targetHn.wardId ? wards.find(w => w.id === targetHn.wardId)?.category : undefined) || 'Medical').toLowerCase();
+      if (hnCat !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to assign supervisors to a Head Nurse from an external division.');
+        return;
+      }
+    }
     if (onAssignHeadNurseToSupervisors) {
       onAssignHeadNurseToSupervisors([nsId], headNurseId);
     } else {
@@ -641,6 +666,13 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   const handleBulkAssignWard = (targetWardId: string) => {
     if (selectedNsIds.length === 0) return;
     const targetWard = wards.find(w => w.id === targetWardId);
+    if (isCnsLoggedIn && targetWard) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      if ((targetWard.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to assign supervisors to other divisions.');
+        return;
+      }
+    }
     let matchingHn = headNurseUsers.find(h => h.wardId === targetWardId);
 
     if (isHnLoggedIn && currentUser && (!matchingHn || currentUser.wardId === targetWardId)) {
@@ -680,6 +712,14 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   // Save assignments from specific Ward modal
   const handleSaveWardNsModal = () => {
     if (!wardModalForNsAssignment) return;
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      if ((wardModalForNsAssignment.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to change ward assignments from other divisions.');
+        setWardModalForNsAssignment(null);
+        return;
+      }
+    }
     const wardId = wardModalForNsAssignment.id;
     const wardCode = wardModalForNsAssignment.code;
     const matchingHn = headNurseUsers.find(h => h.wardId === wardId);
@@ -707,6 +747,15 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   // Bulk Assign HN to selected Nurse Supervisors
   const handleBulkAssignHn = (targetHnId: string) => {
     if (selectedNsIds.length === 0) return;
+    if (isCnsLoggedIn && targetHnId) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      const targetHn = headNurseUsers.find(h => h.id === targetHnId);
+      const hCat = (targetHn?.category || (targetHn?.wardId ? wards.find(w => w.id === targetHn.wardId)?.category : undefined) || 'Medical').toLowerCase();
+      if (hCat !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to assign supervisors to a Head Nurse from an external division.');
+        return;
+      }
+    }
     const targetHn = headNurseUsers.find(h => h.id === targetHnId);
     
     if (onAssignHeadNurseToSupervisors) {
@@ -739,6 +788,15 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
   // Save assignments from specific HN modal (supporting multiple Nurse Supervisors per Head Nurse)
   const handleSaveHnNsModal = () => {
     if (!hnModalForNsAssignment) return;
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      const hCat = (hnModalForNsAssignment.category || (hnModalForNsAssignment.wardId ? wards.find(w => w.id === hnModalForNsAssignment.wardId)?.category : undefined) || 'Medical').toLowerCase();
+      if (hCat !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to assign supervisors to a Head Nurse from an external division.');
+        setHnModalForNsAssignment(null);
+        return;
+      }
+    }
     const hnId = hnModalForNsAssignment.id;
     const hnName = hnModalForNsAssignment.name;
 
@@ -894,6 +952,14 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
       alert('Please enter a valid ward name.');
       return;
     }
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      if ((editingWard.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to change ward information from other divisions.');
+        setEditingWard(null);
+        return;
+      }
+    }
     const code = editWardCode.trim() || editWardName.slice(0, 3).toUpperCase();
     const supervisor = users.find(u => u.id === editWardSupervisorId);
 
@@ -934,6 +1000,14 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     if (!editingCns || !editCnsName.trim() || !editCnsEmail.trim()) {
       alert('Please fill in Chief Nursing Services name and email.');
       return;
+    }
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      if ((editingCns.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to change CNS information from other divisions.');
+        setEditingCns(null);
+        return;
+      }
     }
 
     const updates: Partial<UserAccount> = {
@@ -1048,6 +1122,15 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
       alert('Please fill in Head Nurse name and email.');
       return;
     }
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      const hCat = (editingHn.category || (editingHn.wardId ? wards.find(w => w.id === editingHn.wardId)?.category : undefined) || 'Medical').toLowerCase();
+      if (hCat !== userCat) {
+        alert('Division Security: CNS and DCNS are not allowed to change Head Nurse information from other divisions.');
+        setEditingHn(null);
+        return;
+      }
+    }
 
     const updates: Partial<UserAccount> = {
       name: editHnName.trim(),
@@ -1118,6 +1201,21 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
       alert('Please fill in Nurse Supervisor name and email.');
       return;
     }
+    if (isCnsLoggedIn) {
+      const userCat = (currentUser?.category || userDivisionCategory).toLowerCase();
+      const nsWard = editingNs.wardId ? wards.find(w => w.id === editingNs.wardId) : undefined;
+      const nsCat = (editingNs.category || nsWard?.category || 'Medical').toLowerCase();
+      if (nsCat !== userCat && editingNs.wardId) {
+        alert('Division Security: CNS and DCNS are not allowed to change Nurse Supervisor information from other divisions.');
+        setEditingNs(null);
+        return;
+      }
+      const newWard = wards.find(w => w.id === editNsWardId);
+      if (newWard && (newWard.category || 'Medical').toLowerCase() !== userCat) {
+        alert('Division Security: Cannot assign a Nurse Supervisor to an external division ward.');
+        return;
+      }
+    }
 
     const targetHn = headNurseUsers.find(h => h.id === editNsHeadNurseId);
     const updates: Partial<UserAccount> = {
@@ -1158,9 +1256,14 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     setEditingNs(null);
   };
 
-  // Filter Wards
+  // Filter Wards - Scoped to user's division for CNS & DCNS
   const filteredWards = useMemo(() => {
-    return wards.filter(w => {
+    let list = wards;
+    if (isCnsLoggedIn && currentUser) {
+      const userCat = (currentUser.category || userDivisionCategory).toLowerCase();
+      list = list.filter(w => (w.category || 'Medical').toLowerCase() === userCat);
+    }
+    return list.filter(w => {
       if (wardCategoryFilter !== 'all') {
         const cat = w.category || 'Medical';
         if (cat !== wardCategoryFilter) return false;
@@ -1172,7 +1275,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
         (w.description && w.description.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     });
-  }, [wards, searchQuery, wardCategoryFilter]);
+  }, [wards, searchQuery, wardCategoryFilter, isCnsLoggedIn, currentUser, userDivisionCategory]);
 
   // Filter Head Nurses list
   const filteredHeadNurses = useMemo(() => {
@@ -1224,9 +1327,15 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
     });
   }, [assignableNsUsers, nsFilterWardId, nsFilterHnId, nsWardCategoryFilter, searchQuery, wards, headNurseUsers]);
 
-  // Filter Staff Members for Manpower View across all search criteria
+  // Filter Staff Members for Manpower View across all search criteria (scoped to division for CNS & DCNS)
   const filteredStaffMembers = useMemo(() => {
-    return staff.filter(s => {
+    let list = staff;
+    if (isCnsLoggedIn && currentUser) {
+      const userCat = (currentUser.category || userDivisionCategory).toLowerCase();
+      const divisionWardIds = new Set(wards.filter(w => (w.category || 'Medical').toLowerCase() === userCat).map(w => w.id));
+      list = list.filter(s => (s.wardId && divisionWardIds.has(s.wardId)) || (s.category && s.category.toLowerCase() === userCat));
+    }
+    return list.filter(s => {
       // 1. Category filter
       if (manpowerCategoryFilter !== 'all') {
         const assignedWard = wards.find(w => w.id === (s.wardId || wards[0]?.id));
@@ -1305,17 +1414,31 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                 <span className={`px-2 py-0.5 text-[10px] font-black rounded-full border ${
                   isHnLoggedIn
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : isDcnsLoggedIn
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
                     : isCnsLoggedIn || currentUserRole === 'cns' 
-                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' 
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' 
                     : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                 }`}>
-                  {isHnLoggedIn ? 'Head Nurse Admin' : isCnsLoggedIn || currentUserRole === 'cns' ? 'Institutional Admin' : 'GCNS'}
+                  {isHnLoggedIn 
+                    ? 'Head Nurse Admin' 
+                    : isDcnsLoggedIn 
+                    ? `DCNS (${currentUser?.category || userDivisionCategory} Division)` 
+                    : isCnsLoggedIn || currentUserRole === 'cns' 
+                    ? `CNS (${currentUser?.category || userDivisionCategory} Division)` 
+                    : 'GCNS (Hospital-Wide)'}
                 </span>
               )}
             </div>
-            <h2 className="text-2xl font-black text-white mt-1">Hospital Staff Directory & Hierarchy Governance</h2>
+            <h2 className="text-2xl font-black text-white mt-1">
+              {isCnsLoggedIn 
+                ? `${currentUser?.category || userDivisionCategory} Division Staff Directory & Governance`
+                : 'Hospital Staff Directory & Hierarchy Governance'}
+            </h2>
             <p className="text-xs text-slate-300">
-              {isHnLoggedIn 
+              {isCnsLoggedIn
+                ? `Manage Head Nurses (HN) • Division Wards • Staff Directory within ${currentUser?.category || userDivisionCategory} Division (Full Hospital Tree viewable in Hierarchy Tree)`
+                : isHnLoggedIn 
                 ? 'Clinical Ward Structure • Nurse Supervisors • Staff Directory Governance'
                 : 'Manage Head Nurses (HN) • Hospital Wards • Staff Directory & Hierarchy Governance'}
             </p>
@@ -1416,20 +1539,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
             }`}
           >
             <Users size={16} />
-            Staff Directory & Details ({staff.length})
-          </button>
-
-          {/* TAB: HIERARCHY CHART */}
-          <button
-            onClick={() => setActiveTab('hierarchy')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${
-              activeTab === 'hierarchy'
-                ? 'bg-slate-900 text-white shadow-md'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Sparkles size={16} />
-            {isHnLoggedIn ? 'Command Tree' : isCnsLoggedIn ? '3-Tier Command Tree' : '4-Tier Command Tree'}
+            Staff Directory & Details ({filteredStaffMembers.length})
           </button>
         </div>
 
@@ -2533,7 +2643,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                                     {isTopAdmin && (
                                       <button
                                         type="button"
-                                        onClick={() => setActiveTab('hierarchy')}
+                                        onClick={() => onNavigateToHierarchy && onNavigateToHierarchy()}
                                         className="px-2 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-[10px] font-bold shrink-0 ml-2"
                                         title="Manage in Hierarchy Tree"
                                       >
@@ -2549,7 +2659,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                                 {isTopAdmin && (
                                   <button
                                     type="button"
-                                    onClick={() => setActiveTab('hierarchy')}
+                                    onClick={() => onNavigateToHierarchy && onNavigateToHierarchy()}
                                     className="text-[10px] font-bold text-indigo-300 hover:text-white underline"
                                   >
                                     + Appoint in Hierarchy
@@ -2579,7 +2689,7 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                           )}
                           {isTopAdmin && (
                             <button
-                              onClick={() => setActiveTab('hierarchy')}
+                              onClick={() => onNavigateToHierarchy && onNavigateToHierarchy()}
                               className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-md uppercase tracking-wider"
                               title="Manage DCNS in Hierarchy Tree"
                             >
@@ -3580,25 +3690,6 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
         </div>
       )}
 
-      {/* TAB 5: 4-TIER INSTITUTIONAL HIERARCHY TREE */}
-      {activeTab === 'hierarchy' && (
-        <HierarchyChart 
-          users={users} 
-          wards={wards} 
-          staff={staff} 
-          activeWardId={activeWardId} 
-          onCreateUser={onCreateUser}
-          onUpdateUser={onUpdateUser}
-          onDeleteUser={onDeleteUser}
-          onAssignHeadNurseToSupervisors={onAssignHeadNurseToSupervisors}
-          currentUserRole={currentUserRole}
-          currentUser={currentUser}
-          divisions={divisions}
-          onCreateDivision={onCreateDivision}
-          onDeleteDivision={onDeleteDivision}
-        />
-      )}
-
       {/* MODAL: ASSIGN NURSE SUPERVISORS TO SPECIFIC HEAD NURSE */}
       {hnModalForNsAssignment && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -4432,7 +4523,10 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                   }}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500"
                 >
-                  {wards.map(w => (
+                  {(isCnsLoggedIn 
+                    ? wards.filter(w => (w.category || 'Medical').toLowerCase() === (currentUser?.category || userDivisionCategory).toLowerCase())
+                    : wards
+                  ).map(w => (
                     <option key={w.id} value={w.id}>{w.name} ({w.code}) - {w.category || 'Medical'}</option>
                   ))}
                 </select>
@@ -4443,7 +4537,9 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                   Head Nurse Clinical Category / Division
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                  {effectiveDivisions.map(div => {
+                  {effectiveDivisions
+                    .filter(div => !isCnsLoggedIn || div.name.toLowerCase() === (currentUser?.category || userDivisionCategory).toLowerCase())
+                    .map(div => {
                     const theme = getDivisionTheme(div.colorTheme);
                     const isSelected = newWsCategory === div.name;
                     return (
@@ -4561,7 +4657,9 @@ export const WardAdminManager: React.FC<WardAdminManagerProps> = ({
                   Ward Category / Clinical Division
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                  {effectiveDivisions.map(div => {
+                  {effectiveDivisions
+                    .filter(div => !isCnsLoggedIn || div.name.toLowerCase() === (currentUser?.category || userDivisionCategory).toLowerCase())
+                    .map(div => {
                     const theme = getDivisionTheme(div.colorTheme);
                     const isSelected = newWardCategory === div.name;
                     return (

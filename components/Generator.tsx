@@ -78,6 +78,12 @@ const Generator: React.FC<Props> = ({
   };
 
   const handleGenerate = async (forcedEngine?: GenerationEngine) => {
+    const isSupervisor = currentUserRole === 'nurse_supervisor' || currentUserRole === 'ward_supervisor';
+    if (currentUserRole && !isSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit or generate the duty rota.');
+      return;
+    }
+
     const selectedEngine = forcedEngine || engine;
     setIsGenerating(true);
     setError(null);

@@ -476,7 +476,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 <p className="text-[10px] text-cyan-200/70 mt-0.5 font-medium">Team Leader / Shift In-Charge</p>
               </div>
               <p className="text-[10px] text-slate-300 leading-relaxed">
-                Frontline shift leader: runs daily clinical duty rosters, coordinates staff assignments, and oversees handovers.
+                Frontline shift leader: sole authority to edit and generate the clinical duty rota, manage shift rules, and coordinate daily assignments.
               </p>
             </div>
 

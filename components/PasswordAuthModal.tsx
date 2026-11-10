@@ -46,16 +46,18 @@ interface PasswordAuthModalProps {
   onClose: () => void;
   targetUser: PendingAuthUser | null;
   onSuccessLogin: (user: PendingAuthUser) => void;
+  initialMode?: 'enter_password' | 'otp_reset';
 }
 
 export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
   isOpen,
   onClose,
   targetUser,
-  onSuccessLogin
+  onSuccessLogin,
+  initialMode = 'enter_password'
 }) => {
   // Modal View: 'enter_password' | 'otp_reset' | 'reset_success'
-  const [viewMode, setViewMode] = useState<'enter_password' | 'otp_reset' | 'reset_success'>('enter_password');
+  const [viewMode, setViewMode] = useState<'enter_password' | 'otp_reset' | 'reset_success'>(initialMode);
   
   // Login fields
   const [passwordInput, setPasswordInput] = useState('');
@@ -76,7 +78,8 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
   // Reset state when modal opens or targetUser changes
   useEffect(() => {
     if (isOpen) {
-      setViewMode('enter_password');
+      const mode = initialMode || 'enter_password';
+      setViewMode(mode);
       setPasswordInput('');
       setShowPassword(false);
       setLoginError(null);
@@ -86,11 +89,20 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
       setShowNewPassword(false);
       setOtpError(null);
       setOtpSuccessMessage(null);
-      setActiveDispatch(null);
       setResendCooldown(0);
       setCopiedOtp(false);
+
+      if (mode === 'otp_reset' && targetUser) {
+        // Automatically dispatch OTP to the user's email for instant change password convenience
+        const { otp, emailDispatch } = generateAndSendOtp(targetUser.email, targetUser.name);
+        setActiveDispatch(emailDispatch);
+        setResendCooldown(30);
+        setOtpSuccessMessage(`Security verification OTP has been dispatched to ${targetUser.email}!`);
+      } else {
+        setActiveDispatch(null);
+      }
     }
-  }, [isOpen, targetUser]);
+  }, [isOpen, targetUser, initialMode]);
 
   // Resend countdown timer
   useEffect(() => {
@@ -221,17 +233,33 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
         {/* Top Header Bar */}
         <div className="p-5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-inner">
-              <Lock size={20} />
+            <div className={`w-10 h-10 rounded-2xl ${
+              viewMode === 'enter_password'
+                ? 'bg-indigo-600/30 border-indigo-500/40 text-indigo-400'
+                : viewMode === 'otp_reset'
+                ? 'bg-purple-600/30 border-purple-500/40 text-purple-400'
+                : 'bg-emerald-600/30 border-emerald-500/40 text-emerald-400'
+            } border flex items-center justify-center shadow-inner`}>
+              {viewMode === 'enter_password' ? <Lock size={20} /> : viewMode === 'otp_reset' ? <KeyRound size={20} /> : <CheckCircle2 size={20} />}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-black text-base text-white tracking-tight">Hospital Sign-In Authentication</h3>
+                <h3 className="font-black text-base text-white tracking-tight">
+                  {viewMode === 'enter_password' 
+                    ? 'Hospital Sign-In Authentication' 
+                    : viewMode === 'otp_reset' 
+                    ? 'Change Account Password (OTP Method)' 
+                    : 'Password Successfully Changed'}
+                </h3>
                 <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md">
                   Active Security
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">Institutional Identity &amp; Role Privilege Verification</p>
+              <p className="text-[11px] text-slate-400">
+                {viewMode === 'enter_password'
+                  ? 'Institutional Identity & Role Privilege Verification'
+                  : `Update credentials for ${targetUser.name} via Email OTP verification`}
+              </p>
             </div>
           </div>
           <button
@@ -536,10 +564,16 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setViewMode('enter_password')}
+                  onClick={() => {
+                    if (initialMode === 'otp_reset') {
+                      onClose();
+                    } else {
+                      setViewMode('enter_password');
+                    }
+                  }}
                   className="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer"
                 >
-                  Back to Sign In
+                  {initialMode === 'otp_reset' ? 'Cancel' : 'Back to Sign In'}
                 </button>
               </div>
             </form>
@@ -555,7 +589,7 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
               <div className="space-y-1">
                 <h4 className="text-xl font-black text-white">Password Successfully Updated!</h4>
                 <p className="text-xs text-slate-300 max-w-sm mx-auto">
-                  Your new password is now active for <strong>{targetUser.email}</strong>. You can sign in immediately to access your hospital portal.
+                  Your new password is now active for <strong>{targetUser.email}</strong>. {initialMode === 'otp_reset' ? 'Your active session remains authenticated and secure.' : 'You can sign in immediately to access your hospital portal.'}
                 </p>
               </div>
 
@@ -569,17 +603,19 @@ export const PasswordAuthModal: React.FC<PasswordAuthModalProps> = ({
                   className="flex-1 py-3 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition cursor-pointer"
                 >
                   <ShieldCheck size={16} />
-                  <span>Proceed to Sign In Directly</span>
+                  <span>{initialMode === 'otp_reset' ? 'Done (Keep Working)' : 'Proceed to Sign In Directly'}</span>
                   <ArrowRight size={14} />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setViewMode('enter_password')}
-                  className="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer"
-                >
-                  Return to Login Box
-                </button>
+                {initialMode !== 'otp_reset' && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('enter_password')}
+                    className="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer"
+                  >
+                    Return to Login Box
+                  </button>
+                )}
               </div>
             </div>
           )}

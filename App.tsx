@@ -18,7 +18,7 @@ import {
   WardTransferRequest
 } from './types';
 import { ICONS, MONTHS, YEARS, THEME_SHIFT_STYLES } from './constants';
-import { Building2, Crown, Shield, ShieldCheck, UserCheck, Lock, LogOut, ArrowRightLeft, Sparkles, User, Filter, Stethoscope, Activity, Table2, PhoneCall } from 'lucide-react';
+import { Building2, Crown, Shield, ShieldCheck, UserCheck, Lock, LogOut, ArrowRightLeft, Sparkles, User, Filter, Stethoscope, Activity, Table2, PhoneCall, KeyRound } from 'lucide-react';
 import StaffManager from './components/StaffManager';
 import RulesManager from './components/RulesManager';
 import Generator from './components/Generator';
@@ -29,6 +29,7 @@ import { WardAdminManager } from './components/WardAdminManager';
 import { HierarchyChart } from './components/HierarchyChart';
 import { LoginModal } from './components/LoginModal';
 import { LoginPage } from './components/LoginPage';
+import { PasswordAuthModal } from './components/PasswordAuthModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { 
   createExchangeRequestHelper, 
@@ -116,6 +117,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeType>('Professional');
   const [loggedInStaffId, setLoggedInStaffId] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
 
   // Duty Exchange & Notification State
   const [exchangeRequests, setExchangeRequests] = useState<DutyExchangeRequest[]>([]);
@@ -144,8 +146,8 @@ const App: React.FC = () => {
   const visibleWardsForUser = useMemo(() => {
     if (!currentUser) return wards;
     if (currentUser.role === 'cns' || currentUser.role === 'dcns' || currentUser.nurseDesignation === 'CNS' || currentUser.nurseDesignation === 'DCNS') {
-      const cnsCat = currentUser.category || 'Medical';
-      return wards.filter(w => (w.category || 'Medical') === cnsCat);
+      const cnsCat = (currentUser.category || 'Medical').toLowerCase();
+      return wards.filter(w => (w.category || 'Medical').toLowerCase() === cnsCat);
     }
     if (currentUser.role === 'head_nurse' || currentUser.role === 'ward_supervisor' || currentUser.nurseDesignation === 'HN') {
       if (currentUser.wardId && currentUser.wardId !== 'ALL') {
@@ -161,8 +163,8 @@ const App: React.FC = () => {
     if (!currentUser) return staff;
     if (currentUser.role === 'cns' || currentUser.role === 'dcns' || currentUser.nurseDesignation === 'CNS' || currentUser.nurseDesignation === 'DCNS') {
       const divisionWardIds = new Set(visibleWardsForUser.map(w => w.id));
-      const cnsCat = currentUser.category || 'Medical';
-      return staff.filter(s => (s.wardId && divisionWardIds.has(s.wardId)) || s.category === cnsCat);
+      const cnsCat = (currentUser.category || 'Medical').toLowerCase();
+      return staff.filter(s => (s.wardId && divisionWardIds.has(s.wardId)) || (s.category && s.category.toLowerCase() === cnsCat));
     }
     if (currentUser.role === 'head_nurse' || currentUser.role === 'ward_supervisor' || currentUser.nurseDesignation === 'HN') {
       if (currentUser.wardId && currentUser.wardId !== 'ALL') {
@@ -302,19 +304,59 @@ const App: React.FC = () => {
     setLoggedInStaffId(null);
   };
 
+  // Check if current user is CNS or DCNS
+  const isCurrentUserCnsOrDcns = !!currentUser && (
+    currentUser.role === 'cns' || 
+    currentUser.role === 'dcns' || 
+    currentUser.nurseDesignation === 'CNS' || 
+    currentUser.nurseDesignation === 'DCNS'
+  );
+  const currentUserDiv = (currentUser?.category || 'Medical').toLowerCase();
+
+  // Check if current user is Nurse Supervisor (NS) - Sole authority to edit duty rota
+  const isCurrentUserNurseSupervisor = !!currentUser && (
+    currentUser.role === 'nurse_supervisor' || 
+    currentUser.nurseDesignation === 'NS' ||
+    (currentUser.jobTitle && currentUser.jobTitle.toLowerCase().includes('nurse supervisor'))
+  );
+
   // Ward CRUD handlers
   const handleCreateWard = (newWardData: Omit<WardInfo, 'id'>) => {
+    let finalWardData = newWardData;
+    if (isCurrentUserCnsOrDcns) {
+      finalWardData = { ...newWardData, category: currentUser?.category || 'Medical' };
+    }
     const newId = `ward-${Date.now()}`;
-    const newWard: WardInfo = { ...newWardData, id: newId };
+    const newWard: WardInfo = { ...finalWardData, id: newId };
     setWards(prev => [...prev, newWard]);
     setActiveWardId(newId);
   };
 
   const handleUpdateWard = (id: string, updates: Partial<WardInfo>) => {
-    setWards(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
+    let finalUpdates = updates;
+    if (isCurrentUserCnsOrDcns) {
+      const targetWard = wards.find(w => w.id === id);
+      const targetCat = (targetWard?.category || 'Medical').toLowerCase();
+      if (targetCat !== currentUserDiv) {
+        alert(`Division Security: CNS and DCNS are not allowed to change ward information from other divisions (${targetWard?.category || 'External'}).`);
+        return;
+      }
+      if (finalUpdates.category && finalUpdates.category.toLowerCase() !== currentUserDiv) {
+        finalUpdates = { ...finalUpdates, category: currentUser?.category || 'Medical' };
+      }
+    }
+    setWards(prev => prev.map(w => w.id === id ? { ...w, ...finalUpdates } : w));
   };
 
   const handleDeleteWard = (id: string) => {
+    if (isCurrentUserCnsOrDcns) {
+      const targetWard = wards.find(w => w.id === id);
+      const targetCat = (targetWard?.category || 'Medical').toLowerCase();
+      if (targetCat !== currentUserDiv) {
+        alert('Division Security: CNS and DCNS are not allowed to delete wards from other divisions.');
+        return;
+      }
+    }
     setWards(prev => prev.filter(w => w.id !== id));
     if (activeWardId === id) {
       const remaining = wards.filter(w => w.id !== id);
@@ -324,17 +366,55 @@ const App: React.FC = () => {
 
   // User CRUD handlers
   const handleCreateUser = (newUserData: Omit<UserAccount, 'id'>) => {
+    let finalUserData = newUserData;
+    if (isCurrentUserCnsOrDcns) {
+      if (newUserData.role === 'admin' || newUserData.nurseDesignation === 'GCNS') {
+        alert('Division Security: CNS and DCNS cannot create Top Admin / GCNS accounts.');
+        return;
+      }
+      finalUserData = { ...newUserData, category: currentUser?.category || 'Medical' };
+    }
     const newId = `usr-${Date.now()}`;
-    const newUser: UserAccount = { ...newUserData, id: newId };
+    const newUser: UserAccount = { ...finalUserData, id: newId };
     setUsers(prev => [...prev, newUser]);
   };
 
   const handleUpdateUser = (id: string, updates: Partial<UserAccount>) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-    setCurrentUser(prev => prev && prev.id === id ? { ...prev, ...updates } : prev);
+    let finalUpdates = updates;
+    if (isCurrentUserCnsOrDcns) {
+      const targetUser = users.find(u => u.id === id);
+      if (targetUser) {
+        const targetWard = targetUser.wardId ? wards.find(w => w.id === targetUser.wardId) : undefined;
+        const targetCat = (targetUser.category || targetWard?.category || 'Medical').toLowerCase();
+        if (targetCat !== currentUserDiv && targetUser.id !== currentUser?.id) {
+          alert('Division Security: CNS and DCNS are not allowed to change user information from other divisions.');
+          return;
+        }
+        if (finalUpdates.wardId) {
+          const newWard = wards.find(w => w.id === finalUpdates.wardId);
+          if (newWard && (newWard.category || 'Medical').toLowerCase() !== currentUserDiv) {
+            alert('Division Security: Cannot assign personnel to a ward in an external division.');
+            return;
+          }
+        }
+        if (finalUpdates.category && finalUpdates.category.toLowerCase() !== currentUserDiv && targetUser.role !== 'admin') {
+          finalUpdates = { ...finalUpdates, category: currentUser?.category || 'Medical' };
+        }
+      }
+    }
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...finalUpdates } : u));
+    setCurrentUser(prev => prev && prev.id === id ? { ...prev, ...finalUpdates } : prev);
   };
 
   const handleAssignHeadNurseToSupervisors = (supervisorIds: string[], headNurseId: string) => {
+    if (isCurrentUserCnsOrDcns) {
+      const targetHn = users.find(u => u.id === headNurseId);
+      const hnCat = (targetHn?.category || (targetHn?.wardId ? wards.find(w => w.id === targetHn.wardId)?.category : undefined) || 'Medical').toLowerCase();
+      if (hnCat !== currentUserDiv) {
+        alert('Division Security: You cannot assign supervisors to a Head Nurse from an external division.');
+        return;
+      }
+    }
     const targetHn = users.find(u => u.id === headNurseId);
     setUsers(prev => prev.map(u => {
       if (supervisorIds.includes(u.id)) {
@@ -349,11 +429,26 @@ const App: React.FC = () => {
   };
 
   const handleDeleteUser = (id: string) => {
+    if (isCurrentUserCnsOrDcns) {
+      const targetUser = users.find(u => u.id === id);
+      if (targetUser) {
+        const targetWard = targetUser.wardId ? wards.find(w => w.id === targetUser.wardId) : undefined;
+        const targetCat = (targetUser.category || targetWard?.category || 'Medical').toLowerCase();
+        if (targetCat !== currentUserDiv) {
+          alert('Division Security: CNS and DCNS are not allowed to delete personnel from other divisions.');
+          return;
+        }
+      }
+    }
     setUsers(prev => prev.filter(u => u.id !== id));
   };
 
   // Division CRUD handlers (GCNS authority)
   const handleCreateDivision = (newDiv: { name: string; description?: string; colorTheme?: string; icon?: string }) => {
+    if (isCurrentUserCnsOrDcns) {
+      alert('Division Security: Clinical divisions can only be created by GCNS (General Chief Nursing Services).');
+      return;
+    }
     const cleanName = newDiv.name.trim();
     if (!cleanName) return;
     setDivisions(prev => {
@@ -380,6 +475,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteDivision = (divNameOrId: string) => {
+    if (isCurrentUserCnsOrDcns) {
+      alert('Division Security: Clinical divisions can only be deleted by GCNS (General Chief Nursing Services).');
+      return;
+    }
     if (['Excellency', 'Medical', 'Surgical'].includes(divNameOrId)) {
       alert('The core foundational divisions (Excellency, Medical, Surgical) cannot be removed.');
       return;
@@ -477,8 +576,31 @@ const App: React.FC = () => {
   }, [assignments, activeWardStaff, activeWardId]);
 
   const updateStaff = (id: string, updates: Partial<StaffMember>) => {
-    if (updates.id !== undefined && updates.id !== id) {
-      const cleanNewId = updates.id.trim();
+    let finalUpdates = updates;
+    if (isCurrentUserCnsOrDcns) {
+      const targetStaff = staff.find(s => s.id === id);
+      if (targetStaff) {
+        const targetWard = targetStaff.wardId ? wards.find(w => w.id === targetStaff.wardId) : undefined;
+        const targetCat = (targetStaff.category || targetWard?.category || 'Medical').toLowerCase();
+        if (targetCat !== currentUserDiv) {
+          alert('Division Security: CNS and DCNS are not allowed to change staff information from other divisions.');
+          return;
+        }
+        if (finalUpdates.wardId) {
+          const newWard = wards.find(w => w.id === finalUpdates.wardId);
+          if (newWard && (newWard.category || 'Medical').toLowerCase() !== currentUserDiv) {
+            alert('Division Security: Cannot transfer staff to an external division ward.');
+            return;
+          }
+        }
+        if (finalUpdates.category && finalUpdates.category.toLowerCase() !== currentUserDiv) {
+          finalUpdates = { ...finalUpdates, category: currentUser?.category || 'Medical' };
+        }
+      }
+    }
+
+    if (finalUpdates.id !== undefined && finalUpdates.id !== id) {
+      const cleanNewId = finalUpdates.id.trim();
       if (!cleanNewId) {
         alert("ID cannot be empty.");
         return;
@@ -490,7 +612,7 @@ const App: React.FC = () => {
       
       setStaff(prev => prev.map(s => {
         const isTarget = s.id === id;
-        const sUpdates = isTarget ? { ...updates, id: cleanNewId } : {};
+        const sUpdates = isTarget ? { ...finalUpdates, id: cleanNewId } : {};
         let newObj = { ...s, ...sUpdates };
         if (s.counterPartOf === id) {
           newObj.counterPartOf = cleanNewId;
@@ -502,15 +624,31 @@ const App: React.FC = () => {
       return;
     }
 
-    setStaff(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    setStaff(prev => prev.map(s => s.id === id ? { ...s, ...finalUpdates } : s));
   };
 
   const removeMultipleStaff = (ids: string[]) => {
+    if (isCurrentUserCnsOrDcns) {
+      const forbidden = ids.some(id => {
+        const s = staff.find(st => st.id === id);
+        const sWard = s?.wardId ? wards.find(w => w.id === s.wardId) : undefined;
+        const sCat = (s?.category || sWard?.category || 'Medical').toLowerCase();
+        return sCat !== currentUserDiv;
+      });
+      if (forbidden) {
+        alert('Division Security: CNS and DCNS are not allowed to delete staff members from external divisions.');
+        return;
+      }
+    }
     setStaff(prev => prev.filter(s => !ids.includes(s.id)));
     setAssignments(prev => prev.filter(a => !ids.includes(a.staffId)));
   };
 
-  const updateAssignment = (staffId: string, date: string, shift: ShiftType) => {
+  const updateAssignment = (staffId: string, date: string, shift: ShiftType, isSystemBypass: boolean = false) => {
+    if (!isSystemBypass && !isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit the duty rota.');
+      return;
+    }
     setAssignments(prev => {
       const filtered = prev.filter(a => !(a.staffId === staffId && a.date === date));
       if (shift === ShiftType.None) return filtered;
@@ -569,7 +707,7 @@ const App: React.FC = () => {
 
     if (approve && result.assignmentsToUpdate.length > 0) {
       result.assignmentsToUpdate.forEach(upd => {
-        updateAssignment(upd.staffId, upd.date, upd.shift);
+        updateAssignment(upd.staffId, upd.date, upd.shift, true);
       });
     }
   };
@@ -678,7 +816,11 @@ const App: React.FC = () => {
     setNotifications([]);
   };
 
-  const updateAssignmentsBatch = (updates: Assignment[]) => {
+  const updateAssignmentsBatch = (updates: Assignment[], isSystemBypass: boolean = false) => {
+    if (!isSystemBypass && !isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit the duty rota.');
+      return;
+    }
     setAssignments(prev => {
       const newAssignmentsMap = new Map();
       prev.forEach(a => newAssignmentsMap.set(`${a.staffId}|${a.date}`, a.shift));
@@ -701,6 +843,10 @@ const App: React.FC = () => {
   };
 
   const handleResetPrevMonthLast5Days = () => {
+    if (!isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit the duty rota.');
+      return;
+    }
     const monthIdx = MONTHS.indexOf(config.month) >= 0 ? MONTHS.indexOf(config.month) : 0;
     const prevMonthDates = new Set([-4, -3, -2, -1, 0].map(offset => {
       const d = new Date(config.year, monthIdx, offset);
@@ -722,6 +868,10 @@ const App: React.FC = () => {
   };
 
   const handleResetCurrentMonth = () => {
+    if (!isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit the duty rota.');
+      return;
+    }
     const monthIdx = MONTHS.indexOf(config.month) >= 0 ? MONTHS.indexOf(config.month) : 0;
     const totalDays = new Date(config.year, monthIdx + 1, 0).getDate();
     const currentMonthDates = new Set(Array.from({ length: totalDays }, (_, i) => {
@@ -877,6 +1027,10 @@ const App: React.FC = () => {
   };
 
   const handleImportAssignments = (csvData: string) => {
+    if (!isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit the duty rota.');
+      return;
+    }
     const lines = csvData.split(/\r?\n/).filter(line => line.trim().length > 0);
     if (lines.length < 2) return;
     const header = lines[0].split(',');
@@ -903,6 +1057,14 @@ const App: React.FC = () => {
       });
       alert(`Successfully imported ${imported.length} shift assignments for ${currentWard.name}.`);
     }
+  };
+
+  const handleGenerateRoster = (newAssignments: Assignment[]) => {
+    if (!isCurrentUserNurseSupervisor) {
+      alert('Authority Restriction: Only Nurse Supervisors (NS) have the authority to edit or generate the duty rota.');
+      return;
+    }
+    setAssignments(newAssignments);
   };
 
   // If not logged in, display the initial Log-In Page for the 3 types of users
@@ -937,9 +1099,9 @@ const App: React.FC = () => {
     if (activeTab === 'Wards') {
       return (
         <WardAdminManager
-          wards={wards}
+          wards={visibleWardsForUser}
           users={users}
-          staff={staff}
+          staff={visibleStaffForUser}
           divisions={divisions}
           onCreateDivision={handleCreateDivision}
           onDeleteDivision={handleDeleteDivision}
@@ -956,6 +1118,7 @@ const App: React.FC = () => {
           currentUserRole={currentUser.role}
           currentUser={currentUser}
           onNavigateToCalendar={() => setActiveTab('Calendar')}
+          onNavigateToHierarchy={() => setActiveTab('Hierarchy')}
         />
       );
     }
@@ -1086,7 +1249,7 @@ const App: React.FC = () => {
             staff={activeWardStaff} 
             config={config} 
             assignments={assignments} 
-            onGenerate={setAssignments}
+            onGenerate={handleGenerateRoster}
             onComplete={() => setActiveTab('Calendar')}
             onUpdateConfig={setConfig}
             currentUserRole={currentUser.role}
@@ -1240,6 +1403,16 @@ const App: React.FC = () => {
           </div>
 
           <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+
+          {/* Change Password Button */}
+          <button
+            onClick={() => setIsChangePasswordOpen(true)}
+            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-black transition flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider cursor-pointer"
+            title="Change password via OTP"
+          >
+            <KeyRound size={14} />
+            Password
+          </button>
 
           {/* Log Out Button */}
           <button
@@ -1419,6 +1592,28 @@ const App: React.FC = () => {
         onLoginStaffById={handleLoginStaffById}
         currentUser={currentUser}
       />
+
+      {/* Change Password Modal for logged-in user */}
+      {currentUser && (
+        <PasswordAuthModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+          targetUser={{
+            id: currentUser.id,
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role,
+            nurseDesignation: currentUser.nurseDesignation,
+            jobTitle: currentUser.jobTitle,
+            photoUrl: currentUser.photoUrl,
+            wardName: currentWard?.name,
+            staffMemberId: currentUser.staffMemberId,
+            userAccount: currentUser
+          }}
+          initialMode="otp_reset"
+          onSuccessLogin={() => setIsChangePasswordOpen(false)}
+        />
+      )}
     </div>
   );
 };

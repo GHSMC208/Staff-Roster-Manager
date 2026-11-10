@@ -72,12 +72,37 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
 
   const userCategory: WardCategory = useMemo(() => {
     if (currentUser?.category) return currentUser.category;
+    if (currentUser?.cnsId) {
+      const parentCns = users.find(u => u.id === currentUser.cnsId);
+      if (parentCns?.category) return parentCns.category;
+    }
     if (currentUser?.wardId && currentUser.wardId !== 'ALL') {
       const matchedWard = wards.find(w => w.id === currentUser.wardId);
       if (matchedWard?.category) return matchedWard.category;
     }
     return 'Medical';
-  }, [currentUser, wards]);
+  }, [currentUser, wards, users]);
+
+  // Executive Division Control check:
+  // - GCNS (Top Admin) has apex institutional oversight across all divisions.
+  // - Each CNS and DCNS co-control their SAME assigned division.
+  // - All users (including CNS, DCNS, HNs, NS, Staff Nurses, MSAs) have full viewing access across all divisions.
+  const canControlDivision = (divisionName?: string): boolean => {
+    if (!divisionName) return false;
+    if (isTopAdmin) return true;
+    if (isCnsUser || isDcnsUser) {
+      const targetDiv = divisionName.trim().toLowerCase();
+      const currentCat = (userCategory || '').trim().toLowerCase();
+      if (currentCat && targetDiv === currentCat) return true;
+      if (currentUser?.category && currentUser.category.trim().toLowerCase() === targetDiv) return true;
+      if (currentUser?.cnsId) {
+        const parentCns = users.find(u => u.id === currentUser.cnsId);
+        if (parentCns?.category && parentCns.category.trim().toLowerCase() === targetDiv) return true;
+      }
+      return false;
+    }
+    return false;
+  };
 
   // All types of users can view all categories or filter by category
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | WardCategory>('all');
@@ -269,6 +294,10 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
       alert('Please fill in Chief Nursing Services name and email.');
       return;
     }
+    if (!isTopAdmin && !canControlDivision(editingCns.category)) {
+      alert('Division Security: CNS and DCNS are not allowed to change any information from other divisions.');
+      return;
+    }
 
     if (onUpdateUser) {
       onUpdateUser(editingCns.id, {
@@ -394,6 +423,10 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
     e.preventDefault();
     if (!editingDcns || !editDcnsName.trim() || !editDcnsEmail.trim()) {
       alert('Please fill in Deputy Chief Nursing Services name and email.');
+      return;
+    }
+    if (!isTopAdmin && !canControlDivision(editingDcns.category)) {
+      alert('Division Security: CNS and DCNS are not allowed to change any information from other divisions.');
       return;
     }
 
@@ -620,25 +653,23 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
   // Wards assignable for NS reassignment based on division privileges
   const assignableWardsForReassign = useMemo(() => {
     if (isTopAdmin) return wards;
-    if (isCnsUser || isHeadNurseUser) {
-      const divWards = wards.filter(w => (w.category || 'Medical') === userCategory);
-      return divWards.length > 0 ? divWards : wards;
+    if (isCnsUser || isDcnsUser || isHeadNurseUser) {
+      return wards.filter(w => (w.category || 'Medical').toLowerCase() === userCategory.toLowerCase());
     }
     return wards;
-  }, [wards, isTopAdmin, isCnsUser, isHeadNurseUser, userCategory]);
+  }, [wards, isTopAdmin, isCnsUser, isDcnsUser, isHeadNurseUser, userCategory]);
 
   // Head Nurses assignable for NS reassignment based on division privileges
   const assignableHnsForReassign = useMemo(() => {
     if (isTopAdmin) return allHeadNurses;
-    if (isCnsUser || isHeadNurseUser) {
-      const divHns = allHeadNurses.filter(h => {
+    if (isCnsUser || isDcnsUser || isHeadNurseUser) {
+      return allHeadNurses.filter(h => {
         const cat = h.category || (h.wardId ? wards.find(w => w.id === h.wardId)?.category : undefined) || 'Medical';
-        return cat === userCategory;
+        return cat.toLowerCase() === userCategory.toLowerCase();
       });
-      return divHns.length > 0 ? divHns : allHeadNurses;
     }
     return allHeadNurses;
-  }, [allHeadNurses, wards, isTopAdmin, isCnsUser, isHeadNurseUser, userCategory]);
+  }, [allHeadNurses, wards, isTopAdmin, isCnsUser, isDcnsUser, isHeadNurseUser, userCategory]);
 
   const nurseSupervisors = users.filter(u => u.role === 'nurse_supervisor' || u.nurseDesignation === 'NS');
 
@@ -655,6 +686,18 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
   const handleReassignHnAndWard = (supervisorId: string, newHnId: string, newWardId?: string) => {
     const selectedHn = headNurses.find(h => h.id === newHnId);
     const resolvedWardId = newWardId || selectedHn?.wardId;
+    const resolvedWard = wards.find(w => w.id === resolvedWardId);
+    const targetDivision = selectedHn?.category || resolvedWard?.category || 'Medical';
+
+    const currentNs = nurseSupervisors.find(ns => ns.id === supervisorId);
+    const currentNsWard = currentNs?.wardId ? wards.find(w => w.id === currentNs.wardId) : undefined;
+    const currentNsDivision = currentNs?.category || currentNsWard?.category || 'Medical';
+
+    if (!isTopAdmin && (!canControlDivision(targetDivision) || !canControlDivision(currentNsDivision))) {
+      alert('Division Security: CNS and DCNS are not allowed to change assignments for other divisions.');
+      setAssigningNsId(null);
+      return;
+    }
     
     if (onAssignHeadNurseToSupervisors) {
       onAssignHeadNurseToSupervisors([supervisorId], newHnId);
@@ -744,22 +787,39 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
               <UserCheck size={22} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border text-cyan-300 bg-cyan-950/90 border-cyan-500/40">
                   Active Account: {currentUser.name}
                 </span>
                 <span className="text-xs font-bold text-slate-300">
                   Role: <strong className="text-white">{currentUser.jobTitle || currentUser.role}</strong>
                 </span>
+                {isTopAdmin ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                    👑 Institutional GCNS Control
+                  </span>
+                ) : (isCnsUser || isDcnsUser) ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-400/40">
+                    ⚡ {userCategory} Division Control (CNS &amp; DCNS)
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/40">
+                    👁️ Full Institutional View Access
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Institutional Visibility: You can explore the complete hospital command tree, inspect all 5 tiers, and view clinical staffing distributions across wards.
+                {isTopAdmin
+                  ? 'Apex Hospital Governance: You hold institutional oversight across all clinical divisions, CNS executives, DCNS deputies, and ward command structures.'
+                  : (isCnsUser || isDcnsUser)
+                  ? `Division Directorate: You and your ${isCnsUser && !isDcnsUser ? 'DCNS deputy' : 'CNS chief'} hold management control over the ${userCategory} Division. All other hospital divisions are open for complete institutional viewing.`
+                  : 'Institutional Visibility: Open to all hospital personnel to explore the complete 5-tier command tree, clinical divisions, and supervisory chains across all wards.'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-300 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
-              Assigned Category: <strong className="text-cyan-300">{userCategory}</strong>
+              Assigned Division: <strong className="text-cyan-300">{userCategory}</strong>
             </span>
           </div>
         </div>
@@ -906,6 +966,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
             <div className={`w-full flex ${divisionsToDisplay.length === 1 ? 'justify-center' : 'justify-around'} gap-8 pt-5 items-start`}>
               {divisionsToDisplay.map((division) => {
                 const cns = allCnsUsers.find(c => (c.category || 'Medical').toLowerCase() === division.name.toLowerCase());
+                const hasDivisionControl = canControlDivision(division.name);
                 // Head Nurses in this division
                 const catHeadNurses = headNurses.filter(h => 
                   (cns && h.cnsId && h.cnsId === cns.id) ||
@@ -932,8 +993,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     className={`flex flex-col items-center flex-1 min-w-[540px] max-w-[850px] p-4 sm:p-5 rounded-3xl bg-gradient-to-b ${divisionTheme.bg} border-2 ${divisionTheme.border} shadow-2xl relative`}
                   >
                     {/* Division Header Banner */}
-                    <div className="flex items-center justify-between w-full mb-3 px-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between w-full mb-3 px-1 flex-wrap gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-md flex items-center gap-1.5 ${divisionTheme.badgeBg}`}>
                           {renderDivisionIcon(division.icon, 'w-3 h-3')}
                           {division.name} Division Subtree
@@ -941,6 +1002,19 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                         <span className="text-[10px] text-slate-300 font-bold bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-slate-700">
                           {catHeadNurses.length} HNs • {catWards.length} Nominated Units
                         </span>
+                        {/* Division Governance Status Indicator */}
+                        {hasDivisionControl ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 shadow-xs">
+                            <Sparkles size={11} className="text-emerald-400" />
+                            {isTopAdmin ? 'Apex Governance Control' : 'Active Control (CNS & DCNS)'}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold text-slate-400 bg-slate-900/80 border border-slate-700 flex items-center gap-1">
+                            <span>👁️ View Mode</span>
+                            <span className="text-slate-500">•</span>
+                            <span>Covers {division.name} Directorate</span>
+                          </span>
+                        )}
                       </div>
                       {division.isCustom && isTopAdmin && (
                         <button
@@ -1014,7 +1088,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                             </span>
                           </div>
 
-                          {canEditCns && (
+                          {/* CNS Edit & Delete Actions: Allowed for GCNS OR the CNS/DCNS of this SAME division */}
+                          {hasDivisionControl && (
                             <div className="w-full mt-2 flex items-center gap-1.5">
                               <button
                                 onClick={(e) => {
@@ -1047,7 +1122,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                           </div>
                           <div className="text-xs font-black text-white">Chief Position Vacant</div>
                           <div className="text-[10px] text-slate-400 mb-2.5">No CNS appointed yet for {division.name}</div>
-                          {isTopAdmin && (
+                          {(isTopAdmin || hasDivisionControl) && (
                             <button
                               type="button"
                               onClick={() => handleOpenAddCnsModal(division.name as WardCategory)}
@@ -1113,7 +1188,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                               </div>
 
                               {/* GCNS Edit and Delete Actions */}
-                              {isTopAdmin && (
+                              {/* DCNS Edit and Delete Actions: Allowed for GCNS OR the CNS/DCNS of this SAME division */}
+                              {(isTopAdmin || hasDivisionControl) && (
                                 <div className="mt-2 pt-1.5 border-t border-indigo-900/60 flex items-center justify-between gap-1.5">
                                   <button
                                     type="button"
@@ -1142,9 +1218,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                             </div>
                           );
                         })}
-
-                        {/* GCNS "+ Add Deputy Chief (DCNS)" Button under this CNS */}
-                        {isTopAdmin && cns && (
+                        {/* "+ Add Deputy Chief (DCNS)" Button: Allowed for GCNS OR the CNS/DCNS of this SAME division */}
+                        {(isTopAdmin || hasDivisionControl) && cns && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1207,16 +1282,15 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                                   onClick={() => setSelectedNodeDetails({
                                     tier: 'Level 3 - Ward Unit In-Charge',
                                     title: `Head Nurse (${hn.name})`,
-                                    description: `Appointed under ${hnCategory} category division (Supervising Chief: ${cns.name}) to oversee ${assignedWards.length} nominated hospital wards/units. Sole authority for AI shift roster generation, duty swap approval, and commands assigned Nurse Supervisors across all units.`,
+                                    description: `Appointed under ${hnCategory} category division (Supervising Chief: ${cns.name}) to oversee ${assignedWards.length} nominated hospital wards/units. Directs clinical operations, ward governance, and supervises assigned Nurse Supervisors (NS).`,
                                     privileges: [
                                       `Clinical Category: ${hnCategory}`,
                                       `Nominated Wards (${assignedWards.length}): ${assignedWards.map(w => `${w.name} (${w.code})`).join(', ') || 'Unassigned'}`,
                                       `Supervising Chief: ${cns.name} (${cns.category})`,
-                                      'Sole authority for AI Shift Roster generation across assigned wards',
                                       'Directs & assigns clinical tasks to Nurse Supervisors (NS)',
-                                      'Approves or rejects duty swap and leave requests',
-                                      'Publishes and locks final monthly duty rosters',
-                                      'Supervises clinical bed allocations and staff rosters'
+                                      'Audits monthly ward rosters and clinical compliance',
+                                      'Approves or reviews duty swap and leave requests',
+                                      'Supervises clinical bed allocations and unit manpower'
                                     ],
                                     controlledBy: `Chief Nursing Services (${cns.name})`,
                                     user: hn
@@ -1364,13 +1438,14 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                                                       onClick={() => setSelectedNodeDetails({
                                                         tier: 'Level 4 - Team Clinical Supervisor',
                                                         title: `Nurse Supervisor (${ns.name})`,
-                                                        description: `Clinical team supervisor assigned to ${ward.name} (${ward.code}) under Head Nurse ${hn.name}. Directs frontline nursing shifts, handovers, and patient bed allocations.`,
+                                                        description: `Clinical team supervisor assigned to ${ward.name} (${ward.code}) under Head Nurse ${hn.name}. Holds the sole authority to edit and generate the clinical duty rota, assign shifts, manage handovers, and oversee patient care.`,
                                                         privileges: [
                                                           `Directly Assigned Ward: ${ward.name} (${ward.code})`,
                                                           `Supervising Head Nurse: ${hn.name}`,
+                                                          'Sole authority to edit, update, and generate the clinical duty rota',
+                                                          'Interactive cell editing, CSV schedule import, and month reset controls',
                                                           `Directly commands frontline Staff Nurses (SN) and Medical Service Aids (MSA) in ${ward.code}`,
-                                                          'Conducts daily shift handover and clinical bed assignments',
-                                                          'Escalates shift swaps and leave preferences to Head Nurse'
+                                                          'Conducts daily shift handover and clinical bed assignments'
                                                         ],
                                                         controlledBy: `Head Nurse: ${hn.name}`,
                                                         user: ns
@@ -1394,8 +1469,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                                                         {ns.jobTitle || 'Clinical Supervisor'}
                                                       </div>
 
-                                                      {/* Reassign Quick Button for authorized roles (GCNS, DCNS, CNS, HN) */}
-                                                      {canEditNsAssignment && (
+                                                      {/* Reassign Quick Button for authorized roles (GCNS, DCNS & CNS of this division, or that ward's HN) */}
+                                                      {(isTopAdmin || hasDivisionControl || (isHeadNurseUser && (hn.id === currentUser?.id || hn.email === currentUser?.email))) && (
                                                         <button
                                                           onClick={(e) => {
                                                             e.stopPropagation();
@@ -1476,7 +1551,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                                               <div className="text-[8px] text-amber-300 font-bold flex items-center justify-center gap-0.5">
                                                 <AlertCircle size={9} /> No NS
                                               </div>
-                                              {canEditNsAssignment && (
+                                              {(isTopAdmin || hasDivisionControl || (isHeadNurseUser && (hn.id === currentUser?.id || hn.email === currentUser?.email))) && (
                                                 <button
                                                   onClick={() => {
                                                     const unassigned = unassignedNs[0] || nurseSupervisors[0];
@@ -1598,28 +1673,41 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                 <div className="w-1.5 h-6 bg-amber-600/80" />
 
                 <div className="w-full space-y-2 pt-1">
-                  {unassignedNs.map(ns => (
-                    <div key={ns.id} className="p-2 bg-slate-900 border border-amber-600/60 rounded-xl flex items-center justify-between text-xs">
-                      <div className="text-left">
-                        <div className="font-bold text-white text-[11px]">{ns.name}</div>
-                        <div className="text-[9px] text-amber-300 font-mono">Unassigned HN</div>
+                  {unassignedNs.map(ns => {
+                    const nsWard = ns.wardId ? wards.find(w => w.id === ns.wardId) : undefined;
+                    const nsCat = ns.category || nsWard?.category;
+                    const canManageThisNs = isTopAdmin || (nsCat ? canControlDivision(nsCat) : (isCnsUser || isDcnsUser));
+                    return (
+                      <div key={ns.id} className="p-2 bg-slate-900 border border-amber-600/60 rounded-xl flex items-center justify-between text-xs">
+                        <div className="text-left">
+                          <div className="font-bold text-white text-[11px]">{ns.name}</div>
+                          <div className="text-[9px] text-amber-300 font-mono">
+                            {nsCat ? `${nsCat} Division` : 'Unassigned Division & HN'}
+                          </div>
+                        </div>
+                        {canManageThisNs && assignableHnsForReassign.length > 0 ? (
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleReassignHn(ns.id, e.target.value);
+                              }
+                            }}
+                            defaultValue=""
+                            className="px-2 py-1 bg-amber-950 text-amber-200 border border-amber-500 rounded text-[10px] font-bold outline-none cursor-pointer"
+                          >
+                            <option value="" disabled>Assign HN...</option>
+                            {assignableHnsForReassign.map(h => (
+                              <option key={h.id} value={h.id}>Assign to {h.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="px-2 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded text-[9px] font-bold">
+                            👁️ View Only ({nsCat || 'External'})
+                          </span>
+                        )}
                       </div>
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleReassignHn(ns.id, e.target.value);
-                          }
-                        }}
-                        defaultValue=""
-                        className="px-2 py-1 bg-amber-950 text-amber-200 border border-amber-500 rounded text-[10px] font-bold outline-none cursor-pointer"
-                      >
-                        <option value="" disabled>Assign HN...</option>
-                        {headNurses.map(h => (
-                          <option key={h.id} value={h.id}>Assign to {h.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1680,7 +1768,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
           </div>
 
           {/* Action to edit or delete CNS if node is CNS */}
-          {!isHeadNurseUser && selectedNodeDetails.user && (selectedNodeDetails.user.role === 'cns' || selectedNodeDetails.user.nurseDesignation === 'CNS') && (
+          {selectedNodeDetails.user && (selectedNodeDetails.user.role === 'cns' || selectedNodeDetails.user.nurseDesignation === 'CNS') && (
             <div className="pt-2 border-t border-cyan-800/60 flex items-center justify-between gap-2">
               {isTopAdmin ? (
                 <button
@@ -1691,35 +1779,49 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                   <Trash2 size={14} /> Delete CNS
                 </button>
               ) : <div />}
-              <button
-                onClick={() => handleOpenEditCnsModal(selectedNodeDetails.user!)}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-lg uppercase tracking-wider"
-              >
-                <Edit3 size={14} /> Edit CNS Profile & Division
-              </button>
+              {canControlDivision(selectedNodeDetails.user.category || 'Medical') ? (
+                <button
+                  onClick={() => handleOpenEditCnsModal(selectedNodeDetails.user!)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-lg uppercase tracking-wider"
+                >
+                  <Edit3 size={14} /> Edit CNS Profile
+                </button>
+              ) : (
+                <span className="text-[11px] text-slate-400 italic">
+                  👁️ View Only • Governed by {selectedNodeDetails.user.name} ({selectedNodeDetails.user.category} Division)
+                </span>
+              )}
             </div>
           )}
 
           {/* Action to edit or delete DCNS if node is DCNS */}
-          {isTopAdmin && selectedNodeDetails.user && (selectedNodeDetails.user.role === 'dcns' || selectedNodeDetails.user.nurseDesignation === 'DCNS') && (
+          {selectedNodeDetails.user && (selectedNodeDetails.user.role === 'dcns' || selectedNodeDetails.user.nurseDesignation === 'DCNS') && (
             <div className="pt-3 border-t border-cyan-800/60 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setDeletingDcns(selectedNodeDetails.user!)}
-                className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow uppercase tracking-wider"
-              >
-                <Trash2 size={14} /> Delete DCNS
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const parentCns = allCnsUsers.find(c => c.id === selectedNodeDetails.user?.cnsId) || allCnsUsers.find(c => c.category === selectedNodeDetails.user?.category);
-                  handleOpenEditDcnsModal(selectedNodeDetails.user!, parentCns);
-                }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-lg uppercase tracking-wider"
-              >
-                <Edit3 size={14} /> Edit DCNS Profile
-              </button>
+              {isTopAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => setDeletingDcns(selectedNodeDetails.user!)}
+                  className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow uppercase tracking-wider"
+                >
+                  <Trash2 size={14} /> Delete DCNS
+                </button>
+              ) : <div />}
+              {canControlDivision(selectedNodeDetails.user.category || 'Medical') ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parentCns = allCnsUsers.find(c => c.id === selectedNodeDetails.user?.cnsId) || allCnsUsers.find(c => c.category === selectedNodeDetails.user?.category);
+                    handleOpenEditDcnsModal(selectedNodeDetails.user!, parentCns);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-lg uppercase tracking-wider"
+                >
+                  <Edit3 size={14} /> Edit DCNS Profile
+                </button>
+              ) : (
+                <span className="text-[11px] text-indigo-300/80 italic">
+                  👁️ View Only • Governed by {selectedNodeDetails.user.category || 'Division'} Directorate
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1792,6 +1894,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
+                    disabled={!isTopAdmin}
                     onClick={() => {
                       setEditCnsCategory('Excellency');
                       if (!editCnsJobTitle || editCnsJobTitle.includes('Chief Nursing Services')) {
@@ -1801,6 +1904,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 ${
                       editCnsCategory === 'Excellency'
                         ? 'bg-purple-900/80 border-purple-400 ring-2 ring-purple-400/30 text-purple-100'
+                        : !isTopAdmin
+                        ? 'bg-slate-950/50 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
@@ -1813,6 +1918,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
 
                   <button
                     type="button"
+                    disabled={!isTopAdmin}
                     onClick={() => {
                       setEditCnsCategory('Medical');
                       if (!editCnsJobTitle || editCnsJobTitle.includes('Chief Nursing Services')) {
@@ -1822,6 +1928,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 ${
                       editCnsCategory === 'Medical'
                         ? 'bg-sky-900/80 border-sky-400 ring-2 ring-sky-400/30 text-sky-100'
+                        : !isTopAdmin
+                        ? 'bg-slate-950/50 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
@@ -1834,6 +1942,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
 
                   <button
                     type="button"
+                    disabled={!isTopAdmin}
                     onClick={() => {
                       setEditCnsCategory('Surgical');
                       if (!editCnsJobTitle || editCnsJobTitle.includes('Chief Nursing Services')) {
@@ -1843,6 +1952,8 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 ${
                       editCnsCategory === 'Surgical'
                         ? 'bg-rose-900/80 border-rose-400 ring-2 ring-rose-400/30 text-rose-100'
+                        : !isTopAdmin
+                        ? 'bg-slate-950/50 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
@@ -1853,6 +1964,11 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     <span className="text-[10px] text-rose-300/70 leading-tight">Operating / Post-Op</span>
                   </button>
                 </div>
+                {!isTopAdmin && (
+                  <p className="text-[10px] text-purple-300/70 mt-1.5 italic">
+                    • Division category is fixed to your assigned division ({editCnsCategory}). Only GCNS can transfer chiefs across divisions.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2135,6 +2251,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                 <label className="block text-xs font-black uppercase text-indigo-300 mb-1.5">Assigned Chief Nursing Services (CNS)</label>
                 <select
                   value={editDcnsCnsId}
+                  disabled={!isTopAdmin}
                   onChange={(e) => {
                     const selectedCnsId = e.target.value;
                     setEditDcnsCnsId(selectedCnsId);
@@ -2143,7 +2260,7 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                       setEditDcnsCategory(matchedCns.category);
                     }
                   }}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  className={`w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 ${!isTopAdmin ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
                   {allCnsUsers.map(c => (
                     <option key={c.id} value={c.id}>
@@ -2151,6 +2268,11 @@ export const HierarchyChart: React.FC<HierarchyChartProps> = ({
                     </option>
                   ))}
                 </select>
+                {!isTopAdmin && (
+                  <p className="text-[10px] text-indigo-300/70 mt-1.5 italic">
+                    • Co-governed under {editDcnsCategory} Division Directorate.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

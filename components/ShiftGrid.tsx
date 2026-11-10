@@ -1114,8 +1114,8 @@ const ShiftGrid: React.FC<Props> = ({
                           ${isSeqInvalid ? 'ring-2 ring-rose-500 ring-inset bg-rose-500/20 font-extrabold print:ring-0' : ''}
                           ${d.isContext ? 'opacity-30 grayscale' : ''}
                           ${!hideContextDays && dIdx === contextDays.length - 1 ? (theme === 'Night' ? 'border-r-2 border-r-slate-600' : 'border-r-2 border-r-gray-400') : ''}
-                          ${isCP ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}
-                        title={isSeqInvalid ? `⚠ Sequence Violation: ${seqVal.message}` : (isCP ? "Counterpart Duty (Mirrored)" : undefined)}
+                          ${isCP ? 'cursor-not-allowed opacity-90' : readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                        title={isSeqInvalid ? `⚠ Sequence Violation: ${seqVal.message}` : (isCP ? "Counterpart Duty (Mirrored)" : (readOnly ? "Protected Roster (View-Only) • Duty rota editing is authorized solely for Nurse Supervisors (NS)" : undefined))}
                       >
                         <div className="flex items-center justify-center relative w-full h-full">
                           {shift === ShiftType.None ? '·' : displayValue}

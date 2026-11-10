@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StaffMember, RosterConfig, Assignment, ShiftType, ThemeType, UserRole, UserAccount, WardInfo } from '../types';
 import { ICONS, MONTHS } from '../constants';
 import { 
@@ -17,7 +17,8 @@ import {
   Calendar as CalendarIcon, 
   Layers, 
   ChevronDown, 
-  SlidersHorizontal 
+  SlidersHorizontal,
+  Lock 
 } from 'lucide-react';
 import ShiftGrid from './ShiftGrid';
 import StaffCardsView from './StaffCardsView';
@@ -96,14 +97,18 @@ const CalendarView: React.FC<Props> = ({
     currentUser?.nurseDesignation === 'MSA' ||
     currentUser?.nurseDesignation === 'HA';
 
-  // Can the user edit the shifts?
-  const canEdit = (isSupervisor || isLeadership) && !!onUpdateAssignment;
+  // Can the user edit the shifts? ONLY Nurse Supervisors (NS) have the authority to edit the duty rota
+  const canEdit = isSupervisor && !isLeadership && !isStaffOrMsa && !!onUpdateAssignment;
 
   // View mode
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'daily' | 'oncall'>('table');
   
-  // Edit mode vs Audit/View mode (default to Edit mode for Supervisors, View mode for executives/staff)
-  const [isEditMode, setIsEditMode] = useState<boolean>(isSupervisor);
+  // Edit mode vs Audit/View mode (strictly false for non-supervisors)
+  const [isEditMode, setIsEditMode] = useState<boolean>(canEdit);
+
+  useEffect(() => {
+    setIsEditMode(canEdit);
+  }, [canEdit]);
   const [showContextDays, setShowContextDays] = useState<boolean>(false);
   const [confirmModal, setConfirmModal] = useState<'PREV_5' | 'CURRENT' | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
@@ -295,8 +300,8 @@ const CalendarView: React.FC<Props> = ({
         {/* Right: Actions Toolbar (Edit Mode, Reset, Import, Export, Print) */}
         {activeViewMode === 'table' && (
           <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto justify-end shrink-0 pt-2 xl:pt-0 border-t xl:border-t-0 border-slate-100">
-            {/* Edit / View Mode Switch for Supervisors & Leadership */}
-            {canEdit && (
+            {/* Edit / View Mode Switch for Supervisors */}
+            {canEdit ? (
               <div className="flex p-0.5 bg-slate-100 rounded-xl border border-slate-200">
                 <button
                   type="button"
@@ -324,6 +329,11 @@ const CalendarView: React.FC<Props> = ({
                   <Eye size={13} />
                   <span>View Only</span>
                 </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200/90 rounded-xl text-xs font-extrabold text-amber-900 shadow-2xs">
+                <Lock size={13} className="text-amber-700" />
+                <span>Protected Roster (View-Only) • Editing authorized solely for Nurse Supervisors (NS)</span>
               </div>
             )}
 
